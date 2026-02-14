@@ -1,0 +1,25 @@
+import dotenv from "dotenv";
+dotenv.config();
+
+export const config = {
+  port: parseInt(process.env.PORT || "4000", 10),
+  frontendUrl: process.env.FRONTEND_URL || "http://localhost:3000",
+
+  // MongoDB
+  mongoUri: process.env.MONGO_URI || "mongodb://localhost:27017/ctrlhackdel",
+
+  // Google Gemini
+  geminiApiKey: process.env.GEMINI_API_KEY || "",
+
+  // ElevenLabs
+  elevenLabsApiKey: process.env.ELEVENLABS_API_KEY || "",
+
+  // Snowflake (optional)
+  snowflake: {
+    account: process.env.SNOWFLAKE_ACCOUNT || "",
+    user: process.env.SNOWFLAKE_USER || "",
+    password: process.env.SNOWFLAKE_PASSWORD || "",
+    database: process.env.SNOWFLAKE_DATABASE || "",
+    warehouse: process.env.SNOWFLAKE_WAREHOUSE || "",
+  },
+} as const;

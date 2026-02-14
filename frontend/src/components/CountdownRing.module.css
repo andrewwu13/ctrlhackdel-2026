@@ -1,0 +1,22 @@
+.container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ring {
+  transform: rotate(-90deg);
+}
+
+.progressRing {
+  transition: stroke-dashoffset 1s linear, stroke 0.5s ease;
+}
+
+.time {
+  position: absolute;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text, #fff);
+  font-variant-numeric: tabular-nums;
+}
