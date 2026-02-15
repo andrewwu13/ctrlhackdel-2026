@@ -1,10 +1,12 @@
 import { v4 as uuidv4 } from "uuid";
 import { AgentEngine } from "./agent-engine";
 import { ScoringEngine } from "./scoring-engine";
+import { MessageEnrichmentService } from "./message-enrichment";
 import type { ConversationSession, Message } from "../models/conversation";
 import { ConversationState } from "../models/conversation";
 import type { ProfileVector } from "../models/user";
 import type { CompatibilityResult } from "../models/compatibility";
+import { ConversationModel } from "../db/mongo";
 
 // ── Constants ──────────────────────────────────────────────────────
 
@@ -26,6 +28,7 @@ export class MatchOrchestrator {
   private agentA: AgentEngine;
   private agentB: AgentEngine;
   private scoringEngine: ScoringEngine;
+  private enrichmentService: MessageEnrichmentService;
   private session: ConversationSession;
   private timer: ReturnType<typeof setInterval> | null = null;
   private turnTimer: ReturnType<typeof setInterval> | null = null;
@@ -41,6 +44,7 @@ export class MatchOrchestrator {
     this.agentA = new AgentEngine();
     this.agentB = new AgentEngine();
     this.scoringEngine = new ScoringEngine();
+    this.enrichmentService = new MessageEnrichmentService();
     this.callbacks = callbacks;
 
     // Initialize agents with their respective profiles
@@ -68,6 +72,17 @@ export class MatchOrchestrator {
   async start(): Promise<void> {
     // ── INIT state ──────────────────────────────────────────────
     this.transitionTo(ConversationState.INIT);
+
+    // Persist the conversation document to MongoDB
+    await ConversationModel.create({
+      _id: this.session.id,
+      userAId: this.session.userAId,
+      userBId: this.session.userBId,
+      state: this.session.state,
+      messages: [],
+      startedAt: this.session.startedAt,
+    });
+    console.log(`[MatchOrchestrator] Created conversation ${this.session.id} in MongoDB`);
 
     // Compute pre-conversation score
     this.scoringEngine.computePreConversationScore();
@@ -149,7 +164,26 @@ export class MatchOrchestrator {
     // Add to both agents' memory
     this.agentA.addToHistory(message);
     this.agentB.addToHistory(message);
+
+    // Enrich message with sentiment and topic embedding via Gemini
+    await this.enrichmentService.enrich(message);
+
     this.session.messages.push(message);
+
+    // Persist message to MongoDB
+    await ConversationModel.findByIdAndUpdate(this.session.id, {
+      $push: {
+        messages: {
+          id: message.id,
+          sender: message.sender,
+          content: message.content,
+          timestamp: message.timestamp,
+          sentiment: message.sentiment,
+          topicEmbedding: message.topicEmbedding,
+          tokenCount: message.tokenCount,
+        },
+      },
+    });
 
     // Emit message
     this.callbacks.onAgentMessage(message);
@@ -165,7 +199,7 @@ export class MatchOrchestrator {
   /**
    * End the conversation and produce final results.
    */
-  private end(): void {
+  private async end(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
     if (this.turnTimer) clearInterval(this.turnTimer);
 
@@ -173,13 +207,26 @@ export class MatchOrchestrator {
 
     this.session.endedAt = new Date();
 
-    const finalResult = this.scoringEngine.computeFinalResult(this.session.id);
+    // Update conversation end state in MongoDB
+    await ConversationModel.findByIdAndUpdate(this.session.id, {
+      state: ConversationState.SCORE,
+      endedAt: this.session.endedAt,
+      elapsedSeconds: this.session.elapsedSeconds,
+    });
+    console.log(`[MatchOrchestrator] Conversation ${this.session.id} ended, saved to MongoDB`);
+
+    const finalResult = await this.scoringEngine.computeFinalResult(this.session.id);
     this.callbacks.onConversationEnd(finalResult);
   }
 
   private transitionTo(state: ConversationState): void {
     this.session.state = state;
     this.callbacks.onStateChange(state);
+
+    // Fire-and-forget state update to MongoDB
+    ConversationModel.findByIdAndUpdate(this.session.id, { state }).catch(
+      (err) => console.error(`[MatchOrchestrator] Failed to update state in MongoDB:`, err)
+    );
   }
 
   getSession(): ConversationSession {

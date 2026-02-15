@@ -6,6 +6,7 @@ import {
   SCORE_WEIGHTS,
   EMA_ALPHA,
 } from "../models/compatibility";
+import { CompatibilityResultModel } from "../db/mongo";
 
 // ── Scoring Engine ─────────────────────────────────────────────────
 
@@ -27,6 +28,8 @@ export class ScoringEngine {
   private sentimentTrendB: number[] = [];
   private messageLengthsA: number[] = [];
   private messageLengthsB: number[] = [];
+  private topicEmbeddingsA: number[][] = [];
+  private topicEmbeddingsB: number[][] = [];
   private messageCount = 0;
 
   initialize(profileA: ProfileVector, profileB: ProfileVector): void {
@@ -88,8 +91,21 @@ export class ScoringEngine {
 
     // ── Topic alignment (20%) ───────────────────────────────────
     if (message.topicEmbedding && message.topicEmbedding.length > 0) {
-      // TODO: Compare topic embeddings across messages for growth
-      this.topicScore = Math.min(this.topicScore + 0.02, 1.0);
+      if (message.sender === "agent_a") {
+        this.topicEmbeddingsA.push(message.topicEmbedding);
+      } else {
+        this.topicEmbeddingsB.push(message.topicEmbedding);
+      }
+
+      // Compute cross-agent topic similarity (latest embeddings)
+      if (this.topicEmbeddingsA.length > 0 && this.topicEmbeddingsB.length > 0) {
+        const latestA = this.topicEmbeddingsA[this.topicEmbeddingsA.length - 1];
+        const latestB = this.topicEmbeddingsB[this.topicEmbeddingsB.length - 1];
+        const crossSimilarity = this.cosineSimilarity(latestA, latestB);
+
+        // Use EMA to smooth topic score over time
+        this.topicScore = 0.4 * crossSimilarity + 0.6 * this.topicScore;
+      }
     }
 
     // ── Aggregate weighted score ────────────────────────────────
@@ -125,10 +141,10 @@ export class ScoringEngine {
 
   // ── Final Result ────────────────────────────────────────────────
 
-  computeFinalResult(sessionId: string): CompatibilityResult {
+  async computeFinalResult(sessionId: string): Promise<CompatibilityResult> {
     const finalScore = Math.round(this.smoothedScore);
 
-    return {
+    const result: CompatibilityResult = {
       sessionId,
       compatibilityScore: finalScore,
       breakdown: {
@@ -142,6 +158,12 @@ export class ScoringEngine {
       recommendMatch: finalScore >= 65 && this.hardConstraintPassed,
       computedAt: new Date(),
     };
+
+    // Persist to MongoDB
+    await CompatibilityResultModel.create(result);
+    console.log(`[ScoringEngine] Saved CompatibilityResult for session ${sessionId} (score: ${finalScore})`);
+
+    return result;
   }
 
   // ── Utility Functions ───────────────────────────────────────────
