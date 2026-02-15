@@ -7,6 +7,11 @@ import "../index.css";
 export const metadata: Metadata = {
   title: "SoulBound",
   description: "Agentic dating platform",
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+    apple: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({
@@ -22,4 +27,3 @@ export default function RootLayout({
     </html>
   );
 }
-
