@@ -12,53 +12,6 @@ import type { GeneratedProfile, ConversationMessage, CoreTopic } from "@/hooks/t
 
 // ── Backend API Calls ──────────────────────────────────────────────
 
-const synthesizeAudio = async (text: string): Promise<Blob | null> => {
-  try {
-    const response = await fetch(`${BACKEND_URL}/api/tts/synthesize`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
-    if (!response.ok) return null;
-    return response.blob();
-  } catch {
-    return null;
-  }
-};
-
-const converseWithAgent = async (
-  transcript: string,
-  history: ConversationMessage[],
-): Promise<{ agentText: string; topicsCovered: CoreTopic[]; isComplete: boolean }> => {
-  const response = await fetch(`${BACKEND_URL}/api/onboarding/converse`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ transcript, history }),
-  });
-  if (!response.ok) throw new Error("Conversation request failed");
-  return response.json();
-};
-
-const generateProfileFromBackend = async (
-  answers: string[],
-): Promise<GeneratedProfile> => {
-  const response = await fetch(`${BACKEND_URL}/api/profile/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ answers }),
-  });
-  if (!response.ok) throw new Error("Profile generation failed");
-  const data = await response.json();
-  if (data.userId) localStorage.setItem("soulbound_userId", data.userId);
-  return {
-    ...data.profile,
-    interests: data.profile?.interests || [],
-    hobbies: data.profile?.hobbies || [],
-    lifestyle: data.profile?.lifestyle || [],
-  } as GeneratedProfile;
-};
-
-// ── Topic label map ────────────────────────────────────────────────
 
 const TOPIC_LABELS: Record<string, string> = {
   values: "Values",
@@ -71,6 +24,7 @@ const TOPIC_LABELS: Record<string, string> = {
 
 // ── Component ──────────────────────────────────────────────────────
 
+
 const Onboarding = () => {
   const router = useRouter();
   const [userId] = useState(() =>
@@ -79,11 +33,58 @@ const Onboarding = () => {
       : null,
   );
 
+  const synthesizeAudio = useCallback(async (text: string): Promise<Blob | null> => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/tts/synthesize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      if (!response.ok) return null;
+      return response.blob();
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const converseWithAgent = useCallback(async (
+    transcript: string,
+    history: ConversationMessage[],
+  ): Promise<{ agentText: string; topicsCovered: CoreTopic[]; isComplete: boolean }> => {
+    const response = await fetch(`${BACKEND_URL}/api/onboarding/converse`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transcript, history }),
+    });
+    if (!response.ok) throw new Error("Conversation request failed");
+    return response.json();
+  }, []);
+
+  const generateProfileFromBackend = useCallback(async (
+    answers: string[],
+  ): Promise<GeneratedProfile> => {
+    const response = await fetch(`${BACKEND_URL}/api/profile/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answers }),
+    });
+    if (!response.ok) throw new Error("Profile generation failed");
+    const data = await response.json();
+    if (data.userId) localStorage.setItem("soulbound_userId", data.userId);
+    return {
+      ...data.profile,
+      interests: data.profile?.interests || [],
+      hobbies: data.profile?.hobbies || [],
+      lifestyle: data.profile?.lifestyle || [],
+    } as GeneratedProfile;
+  }, []);
+
   const flow = useConversationFlow(
     synthesizeAudio,
     converseWithAgent,
     generateProfileFromBackend,
   );
+
 
   const handleLaunch = useCallback(() => {
     const storedUserId = localStorage.getItem("soulbound_userId");

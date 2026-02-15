@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { config } from "../config";
+import { User as UserModel } from "../models/user";
 
 // ── MongoDB Connection ─────────────────────────────────────────────
 
@@ -32,13 +33,7 @@ export async function disconnectMongo(): Promise<void> {
 
 // ── Mongoose Schemas ───────────────────────────────────────────────
 
-const userSchema = new mongoose.Schema(
-  {
-    createdAt: { type: Date, default: Date.now },
-    updatedAt: { type: Date, default: Date.now },
-  },
-  { timestamps: true }
-);
+
 
 const userProfileSchema = new mongoose.Schema(
   {
@@ -119,7 +114,8 @@ const compatibilityResultSchema = new mongoose.Schema(
 
 // ── Models ─────────────────────────────────────────────────────────
 
-export const UserModel = mongoose.model("User", userSchema);
+
+
 export const UserProfileModel = mongoose.model("UserProfile", userProfileSchema);
 export const ProfileVectorModel = mongoose.model("ProfileVector", profileVectorSchema);
 export const ConversationModel = mongoose.model("Conversation", conversationSchema);
@@ -127,3 +123,5 @@ export const CompatibilityResultModel = mongoose.model(
   "CompatibilityResult",
   compatibilityResultSchema
 );
+
+export { UserModel };
