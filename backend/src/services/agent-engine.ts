@@ -1,5 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { config } from "../config";
+import { generateWithRetry } from "./gemini-client";
 import type { ProfileVector } from "../models/user";
 import type { Message } from "../models/conversation";
 
@@ -33,14 +32,9 @@ const WRAP_INSTRUCTION =
 // ── Agent Engine ───────────────────────────────────────────────────
 
 export class AgentEngine {
-  private genAI: GoogleGenerativeAI;
   private sessionHistory: Message[] = [];
   private profileVector: ProfileVector | null = null;
   private profileSummary: string = "";
-
-  constructor() {
-    this.genAI = new GoogleGenerativeAI(config.geminiApiKey);
-  }
 
   /**
    * Initialize the agent with a user's profile vector.
@@ -75,16 +69,17 @@ export class AgentEngine {
     const prompt = `${historyFormatted}\nother_person: ${otherMessage}\nyou:`;
 
     try {
-      const model = this.genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-      const result = await model.generateContent({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        systemInstruction: { role: "system", parts: [{ text: systemPrompt }] },
-      });
+      const response = await generateWithRetry(
+        {
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          systemInstruction: { role: "system", parts: [{ text: systemPrompt }] } as never,
+        },
+        { caller: "AgentEngine" },
+      );
 
-      const response = result.response.text();
       return response;
     } catch (error) {
-      console.error("[AgentEngine] Generation error:", error);
+      console.error("[AgentEngine] Generation error after retries:", error instanceof Error ? error.message : error);
       return "I'd love to hear more about that...";
     }
   }

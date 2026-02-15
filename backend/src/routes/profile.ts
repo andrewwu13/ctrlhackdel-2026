@@ -1,12 +1,10 @@
 import { Router, Request, Response } from "express";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { config } from "../config";
+import { generateWithRetry } from "../services/gemini-client";
 import { ProfileBuilder } from "../services/profile-builder";
 import { UserModel, ProfileVectorModel } from "../db/mongo";
 import type { UserProfile } from "../models/user";
 
 const router = Router();
-const genAI = new GoogleGenerativeAI(config.geminiApiKey);
 const profileBuilder = new ProfileBuilder();
 
 type EditableProfilePayload = {
@@ -61,13 +59,11 @@ Interview answers:\n${answers.map((a, i) => `${i + 1}. ${a}`).join("\n")}`;
     let generatedProfile;
 
     try {
-      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-      const result = await model.generateContent({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.4 },
-      });
+      const text = await generateWithRetry(
+        { contents: [{ role: "user", parts: [{ text: prompt }] }] },
+        { caller: "Profile:Generate", temperature: 0.4, jsonMode: true },
+      );
 
-      const text = result.response.text();
       const jsonMatch = text.match(/\{[\s\S]*\}/);
 
       if (!jsonMatch) {
@@ -85,7 +81,7 @@ Interview answers:\n${answers.map((a, i) => `${i + 1}. ${a}`).join("\n")}`;
         dealbreakers: (parsed.dealbreakers || []).filter(Boolean),
       };
     } catch (geminiError) {
-      console.error("[Profile] Gemini generation failed, using fallback:", geminiError);
+      console.error("[Profile] Gemini generation failed after retries, using fallback:", geminiError instanceof Error ? geminiError.message : geminiError);
       const combined = answers.join(" ").trim();
       generatedProfile = {
         name: "User",

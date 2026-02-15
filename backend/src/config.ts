@@ -23,8 +23,12 @@ export const config = {
   // MongoDB
   mongoUri: process.env.MONGO_URI || "mongodb://localhost:27017/ctrlhackdel",
 
-  // Google Gemini
+  // Google Gemini (embeddings only)
   geminiApiKey: process.env.GEMINI_API_KEY || "",
+
+  // Groq (primary LLM — 14,400 RPD free tier)
+  groqApiKey: process.env.GROQ_API_KEY || "",
+
   googleClientIds,
   googleClientId: googleClientIds[0] || "",
 

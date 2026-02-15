@@ -1,18 +1,11 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { config } from "../config";
+import { generateWithRetry, embedWithRetry } from "./gemini-client";
 import type { Message } from "../models/conversation";
 
 // ── Message Enrichment Service ─────────────────────────────────────
 // Computes sentiment and topic embeddings for each agent message
-// using Gemini models.
+// using the shared Gemini client with retry logic.
 
 export class MessageEnrichmentService {
-  private genAI: GoogleGenerativeAI;
-
-  constructor() {
-    this.genAI = new GoogleGenerativeAI(config.geminiApiKey);
-  }
-
   /**
    * Enrich a message with sentiment and topic embedding.
    * Mutates the message object in place and returns it.
@@ -39,23 +32,23 @@ export class MessageEnrichmentService {
    */
   private async computeSentiment(text: string): Promise<number> {
     try {
-      const model = this.genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+      const response = await generateWithRetry(
+        {
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  text: `Analyze the sentiment of this message from a dating conversation. Return ONLY a single number between -1.0 (very negative) and 1.0 (very positive). No explanation.\n\nMessage: "${text}"`,
+                },
+              ],
+            },
+          ],
+        },
+        { caller: "MessageEnrichment:Sentiment" },
+      );
 
-      const result = await model.generateContent({
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                text: `Analyze the sentiment of this message from a dating conversation. Return ONLY a single number between -1.0 (very negative) and 1.0 (very positive). No explanation.\n\nMessage: "${text}"`,
-              },
-            ],
-          },
-        ],
-      });
-
-      const response = result.response.text().trim();
-      const score = parseFloat(response);
+      const score = parseFloat(response.trim());
 
       if (!isNaN(score) && score >= -1 && score <= 1) {
         return score;
@@ -69,14 +62,8 @@ export class MessageEnrichmentService {
       }
 
       return 0;
-    } catch (error: any) {
-      if (error.message?.includes("429") || error.status === 429) {
-        console.warn(
-          "[MessageEnrichment] Sentiment quota exceeded (429). Skipping sentiment analysis."
-        );
-        return 0;
-      }
-      console.error("[MessageEnrichment] Sentiment error:", error);
+    } catch (error) {
+      console.error("[MessageEnrichment] Sentiment analysis failed after retries:", error instanceof Error ? error.message : error);
       return 0;
     }
   }
@@ -86,20 +73,9 @@ export class MessageEnrichmentService {
    */
   private async computeTopicEmbedding(text: string): Promise<number[]> {
     try {
-      const model = this.genAI.getGenerativeModel({
-        model: "text-embedding-004",
-      });
-
-      const result = await model.embedContent(text);
-      return result.embedding.values;
-    } catch (error: any) {
-      if (error.message?.includes("429") || error.status === 429) {
-        console.warn(
-          "[MessageEnrichment] Embedding quota exceeded (429). Skipping topic embedding."
-        );
-        return [];
-      }
-      console.error("[MessageEnrichment] Embedding error:", error);
+      return await embedWithRetry(text, { caller: "MessageEnrichment:Embedding" });
+    } catch (error) {
+      console.error("[MessageEnrichment] Topic embedding failed after retries:", error instanceof Error ? error.message : error);
       return [];
     }
   }

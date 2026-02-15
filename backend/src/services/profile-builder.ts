@@ -1,17 +1,10 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { config } from "../config";
+import { generateWithRetry, embedWithRetry } from "./gemini-client";
 import type { UserProfile, ProfileVector, PersonalityVector } from "../models/user";
 import { UserProfileModel, ProfileVectorModel } from "../db/mongo";
 
 // ── Profile Builder ────────────────────────────────────────────────
 
 export class ProfileBuilder {
-  private genAI: GoogleGenerativeAI;
-
-  constructor() {
-    this.genAI = new GoogleGenerativeAI(config.geminiApiKey);
-  }
-
   /**
    * Build a complete ProfileVector from onboarding data and persist to MongoDB.
    */
@@ -89,10 +82,6 @@ export class ProfileBuilder {
    */
   private async generateEmbedding(profile: UserProfile): Promise<number[]> {
     try {
-      const model = this.genAI.getGenerativeModel({
-        model: "text-embedding-004",
-      });
-
       const profileText = [
         `Values: ${profile.values.join(", ")}`,
         `Boundaries: ${profile.boundaries.join(", ")}`,
@@ -104,10 +93,9 @@ export class ProfileBuilder {
         ),
       ].join(". ");
 
-      const result = await model.embedContent(profileText);
-      return result.embedding.values;
+      return await embedWithRetry(profileText, { caller: "ProfileBuilder:Embedding" });
     } catch (error) {
-      console.error("[ProfileBuilder] Embedding generation error:", error);
+      console.error("[ProfileBuilder] Embedding generation error after retries:", error instanceof Error ? error.message : error);
       // Return a zero vector as fallback
       return new Array(768).fill(0);
     }
@@ -120,8 +108,6 @@ export class ProfileBuilder {
     profile: UserProfile
   ): Promise<PersonalityVector> {
     try {
-      const model = this.genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-
       const prompt = `Based on the following user profile, estimate their Big-5 personality traits as scores from 0.0 to 1.0.
 Respond ONLY with a JSON object: {"openness": X, "conscientiousness": X, "extraversion": X, "agreeableness": X, "neuroticism": X}
 
@@ -131,14 +117,17 @@ Lifestyle: ${profile.lifestyle.join(", ")}
 Interests: ${profile.interests.join(", ")}
 Hobbies: ${profile.hobbies.join(", ")}`;
 
-      const result = await model.generateContent(prompt);
-      const text = result.response.text();
+      const text = await generateWithRetry(
+        { contents: [{ role: "user", parts: [{ text: prompt }] }] },
+        { caller: "ProfileBuilder:Personality", jsonMode: true },
+      );
+
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         return JSON.parse(jsonMatch[0]) as PersonalityVector;
       }
     } catch (error) {
-      console.error("[ProfileBuilder] Personality extraction error:", error);
+      console.error("[ProfileBuilder] Personality extraction error after retries:", error instanceof Error ? error.message : error);
     }
 
     // Fallback: neutral personality
