@@ -69,7 +69,13 @@ export class MessageEnrichmentService {
       }
 
       return 0;
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message?.includes("429") || error.status === 429) {
+        console.warn(
+          "[MessageEnrichment] Sentiment quota exceeded (429). Skipping sentiment analysis."
+        );
+        return 0;
+      }
       console.error("[MessageEnrichment] Sentiment error:", error);
       return 0;
     }
@@ -86,7 +92,13 @@ export class MessageEnrichmentService {
 
       const result = await model.embedContent(text);
       return result.embedding.values;
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message?.includes("429") || error.status === 429) {
+        console.warn(
+          "[MessageEnrichment] Embedding quota exceeded (429). Skipping topic embedding."
+        );
+        return [];
+      }
       console.error("[MessageEnrichment] Embedding error:", error);
       return [];
     }

@@ -68,7 +68,7 @@ export function registerOnboardingHandlers(namespace: Namespace): void {
                 role: "user",
                 parts: [
                   {
-                    text: `You are an onboarding assistant for a dating app. The user just answered: "${data.content}". Give a very brief, warm 1-sentence acknowledgment (max 20 words), then naturally transition to asking: "${coreQuestions[currentQuestionIndex]}"`,
+                    text: `You are an onboarding assistant for a dating app. You highly value user experience, and you are eager to learn more about the user's preferences. You are lighthearted and fun, but you also take your job seriously. The user just answered: "${data.content}". Give a warm, brief acknowledgment, then naturally transition to asking: "${coreQuestions[currentQuestionIndex]}"`,
                   },
                 ],
               },
@@ -98,7 +98,7 @@ export function registerOnboardingHandlers(namespace: Namespace): void {
                 role: "user",
                 parts: [
                   {
-                    text: `You are an onboarding assistant for a dating app. Here's the conversation so far:\n${historyText}\n\nNow have a natural follow-up conversation to learn more about the user. Ask ONE specific follow-up question based on their previous answers. Be warm, curious, and conversational. Keep your response to 2-3 sentences max.`,
+                    text: `You are an onboarding assistant for a dating app. You highly value user experience, and you are eager to learn more about the user's preferences. You are lighthearted and fun, but you also take your job seriously. Here's the conversation so far:\n${historyText}\n\nNow have a natural follow-up conversation to learn more about the user. Ask ONE specific follow-up question based on their previous answers. Be warm, curious, conversational, and most importantly, CREATIVE. Keep your response to 2-3 sentences max.`,
                   },
                 ],
               },

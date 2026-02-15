@@ -73,6 +73,7 @@ const profileVectorSchema = new mongoose.Schema(
 
 const conversationSchema = new mongoose.Schema(
   {
+    _id: { type: String, required: true },
     userAId: { type: String, required: true },
     userBId: { type: String, required: true },
     state: {

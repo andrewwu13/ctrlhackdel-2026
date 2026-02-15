@@ -61,7 +61,7 @@ async function start(): Promise<void> {
     await connectMongo();
 
     httpServer.listen(config.port, () => {
-      console.log(`\n🚀 Server running on http://localhost:${config.port}`);
+      console.log(`\n🚀 Server running on http://localhost:${config.port} (v3)`);
       console.log(`   REST API:    http://localhost:${config.port}/api/health`);
       console.log(`   Socket.IO:   ws://localhost:${config.port}`);
       console.log(`   Namespaces:  /onboarding, /conversation\n`);
