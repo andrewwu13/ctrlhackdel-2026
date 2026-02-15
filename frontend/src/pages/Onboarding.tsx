@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useNavigate } from "react-router-dom";
+import { useRouter } from "next/navigation";
 import LiquidSilkBg from "@/components/LiquidSilkBg";
 import AgentAvatar from "@/components/AgentAvatar";
 import ProfileReview from "@/components/ProfileReview";
@@ -94,7 +94,7 @@ const TOPIC_LABELS: Record<string, string> = {
 // ── Component ──────────────────────────────────────────────────────
 
 const Onboarding = () => {
-  const navigate = useNavigate();
+  const router = useRouter();
   const [userId] = useState(() =>
     typeof window !== "undefined"
       ? localStorage.getItem("soulbound_userId")
@@ -111,25 +111,9 @@ const Onboarding = () => {
 
   const handleLaunch = useCallback(async () => {
     const storedUserId = localStorage.getItem("soulbound_userId");
-    const resolvedUserId = storedUserId || userId;
-
-    if (!resolvedUserId) {
-      setLaunchError("Missing profile id. Please regenerate your profile.");
-      return;
-    }
-
-    setIsSavingProfile(true);
-    setLaunchError("");
-
-    try {
-      await saveProfileToBackend(resolvedUserId, flow.profile, flow.personality);
-      navigate("/account", { state: { userId: resolvedUserId } });
-    } catch (error) {
-      setLaunchError(error instanceof Error ? error.message : "Unable to save profile");
-    } finally {
-      setIsSavingProfile(false);
-    }
-  }, [flow.personality, flow.profile, navigate, userId]);
+    const uid = storedUserId || userId;
+    router.push(`/lounge${uid ? `?userId=${uid}` : ""}`);
+  }, [router, userId]);
 
   return (
     <div className="relative min-h-screen overflow-hidden">
