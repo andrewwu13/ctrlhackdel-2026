@@ -5,11 +5,14 @@ const router = Router();
 
 const ELEVENLABS_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
 
+// Circuit breaker: once quota is exhausted, stop calling ElevenLabs for a while
+let ttsDisabledUntil = 0;
+
 /**
  * POST /api/tts/synthesize
  * Proxies text-to-speech requests to ElevenLabs.
- * Frontend sends text, backend calls ElevenLabs with the API key,
- * and returns the audio blob.
+ * Falls back gracefully when quota is exhausted — returns { skipped: true }
+ * so the frontend uses its text-only timing fallback.
  */
 router.post("/synthesize", async (req: Request, res: Response) => {
   try {
@@ -21,7 +24,14 @@ router.post("/synthesize", async (req: Request, res: Response) => {
     }
 
     if (!config.elevenLabsApiKey) {
-      res.status(503).json({ error: "ElevenLabs API key not configured" });
+      console.warn("[TTS] No API key configured — skipping");
+      res.status(200).json({ skipped: true, reason: "no_api_key" });
+      return;
+    }
+
+    // Circuit breaker: skip if quota was recently exhausted
+    if (Date.now() < ttsDisabledUntil) {
+      res.status(200).json({ skipped: true, reason: "quota_exhausted" });
       return;
     }
 
@@ -49,8 +59,17 @@ router.post("/synthesize", async (req: Request, res: Response) => {
 
     if (!response.ok) {
       const errorText = await response.text();
+
+      // Detect quota exhaustion and activate circuit breaker
+      if (errorText.includes("quota_exceeded")) {
+        console.warn("[TTS] ElevenLabs quota exhausted — disabling TTS for 5 minutes");
+        ttsDisabledUntil = Date.now() + 5 * 60 * 1000;
+        res.status(200).json({ skipped: true, reason: "quota_exhausted" });
+        return;
+      }
+
       console.error("[TTS] ElevenLabs error:", errorText);
-      res.status(response.status).json({ error: "ElevenLabs request failed" });
+      res.status(200).json({ skipped: true, reason: "api_error" });
       return;
     }
 
@@ -60,8 +79,9 @@ router.post("/synthesize", async (req: Request, res: Response) => {
     res.send(Buffer.from(arrayBuffer));
   } catch (error) {
     console.error("[TTS] Synthesis error:", error);
-    res.status(500).json({ error: "Failed to synthesize audio" });
+    res.status(200).json({ skipped: true, reason: "error" });
   }
 });
 
 export default router;
+
