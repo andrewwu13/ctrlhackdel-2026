@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 const LiquidSilkBg = () => {
   const [mousePos, setMousePos] = useState({ x: 50, y: 50 });
-  const rafRef = useRef<number>();
+  const rafRef = useRef<number>(undefined);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -27,14 +27,14 @@ const LiquidSilkBg = () => {
       <div
         className="absolute inset-0 animate-liquid-silk"
         style={{
-          background: `
+          backgroundImage: `
             radial-gradient(ellipse at ${mousePos.x}% ${mousePos.y}%, hsla(350, 78%, 56%, 0.15) 0%, transparent 50%),
             radial-gradient(ellipse at ${100 - mousePos.x}% ${100 - mousePos.y}%, hsla(270, 50%, 30%, 0.2) 0%, transparent 50%),
             radial-gradient(ellipse at 50% 50%, hsla(46, 100%, 50%, 0.05) 0%, transparent 40%),
             linear-gradient(135deg, hsl(270, 50%, 8%) 0%, hsl(270, 45%, 12%) 30%, hsl(280, 40%, 10%) 60%, hsl(270, 50%, 8%) 100%)
           `,
           backgroundSize: "200% 200%",
-          transition: "background 0.3s ease",
+          transition: "background-image 0.3s ease",
         }}
       />
       {/* Noise overlay */}

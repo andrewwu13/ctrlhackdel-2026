@@ -1,12 +1,20 @@
 /**
- * Shared types for the onboarding interview flow.
+ * Shared types for the onboarding conversation flow.
  */
 
-export type InterviewQuestion = {
-  id: string;
-  section: "Soul Vector" | "Voice Imprint";
-  prompt: string;
+export type ConversationMessage = {
+  role: "user" | "agent";
+  content: string;
+  timestamp: number;
 };
+
+export type CoreTopic =
+  | "values"
+  | "boundaries"
+  | "lifestyle"
+  | "communication"
+  | "goals"
+  | "dealbreakers";
 
 export type GeneratedProfile = {
   name: string;
@@ -16,6 +24,16 @@ export type GeneratedProfile = {
   communicationStyle: string;
   goals: string[];
   dealbreakers: string[];
+  interests: string[];
+  hobbies: string[];
+  lifestyle: string[];
+};
+
+export type PersonalitySliders = {
+  openness: number;
+  extraversion: number;
+  agreeableness: number;
+  emotionalStability: number;
 };
 
 export type AgentMode =

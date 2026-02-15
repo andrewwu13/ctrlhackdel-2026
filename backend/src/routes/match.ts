@@ -21,15 +21,32 @@ router.post("/start", async (req: Request, res: Response) => {
 
     // Fetch both user profile vectors from MongoDB
     const profileA = await ProfileBuilder.getProfileVector(userAId);
-    const profileB = await ProfileBuilder.getProfileVector(userBId);
+    let profileB = await ProfileBuilder.getProfileVector(userBId);
 
     if (!profileA) {
       res.status(404).json({ error: `ProfileVector not found for user ${userAId}` });
       return;
     }
+
+    // Auto-generate a demo agent if userBId has no profile
     if (!profileB) {
-      res.status(404).json({ error: `ProfileVector not found for user ${userBId}` });
-      return;
+      console.log(`[Match] No ProfileVector for ${userBId}, generating demo agent`);
+      const now = new Date();
+      profileB = {
+        userId: userBId,
+        embedding: new Array(768).fill(0).map(() => Math.random() * 2 - 1),
+        personality: {
+          openness: 0.7,
+          conscientiousness: 0.6,
+          extraversion: 0.65,
+          agreeableness: 0.75,
+          neuroticism: 0.3,
+        },
+        hardFilters: {},
+        softFilters: {},
+        createdAt: now,
+        updatedAt: now,
+      };
     }
 
     const sessionId = uuidv4();
