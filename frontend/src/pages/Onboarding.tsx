@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useNavigate } from "react-router-dom";
+import { useRouter } from "next/navigation";
 import LiquidSilkBg from "@/components/LiquidSilkBg";
 import AgentAvatar from "@/components/AgentAvatar";
 import ProfileReview from "@/components/ProfileReview";
@@ -72,7 +72,7 @@ const TOPIC_LABELS: Record<string, string> = {
 // ── Component ──────────────────────────────────────────────────────
 
 const Onboarding = () => {
-  const navigate = useNavigate();
+  const router = useRouter();
   const [userId] = useState(() =>
     typeof window !== "undefined"
       ? localStorage.getItem("soulbound_userId")
@@ -87,8 +87,9 @@ const Onboarding = () => {
 
   const handleLaunch = useCallback(() => {
     const storedUserId = localStorage.getItem("soulbound_userId");
-    navigate("/lounge", { state: { userId: storedUserId || userId } });
-  }, [navigate, userId]);
+    const uid = storedUserId || userId;
+    router.push(`/lounge${uid ? `?userId=${uid}` : ""}`);
+  }, [router, userId]);
 
   return (
     <div className="relative min-h-screen overflow-hidden">

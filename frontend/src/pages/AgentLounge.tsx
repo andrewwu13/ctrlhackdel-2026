@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useRouter, useSearchParams } from "next/navigation";
 import { io, Socket } from "socket.io-client";
 import LiquidSilkBg from "@/components/LiquidSilkBg";
 import AgentAvatar from "@/components/AgentAvatar";
@@ -34,13 +34,13 @@ type ConversationState = "INIT" | "LIVE" | "WRAP" | "SCORE";
 // ── Component ──────────────────────────────────────────────────────
 
 const AgentLounge = () => {
-  const navigate = useNavigate();
-  const location = useLocation();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const socketRef = useRef<Socket | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const userId = (location.state as { userId?: string })?.userId
-    || localStorage.getItem("soulbound_userId");
+  const userId = searchParams?.get("userId")
+    || (typeof window !== "undefined" ? localStorage.getItem("soulbound_userId") : null);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [score, setScore] = useState(0);
@@ -184,7 +184,7 @@ const AgentLounge = () => {
           <div className="glass-strong rounded-xl p-4 mb-4 border border-destructive/30">
             <p className="text-destructive text-sm">{error}</p>
             <button
-              onClick={() => navigate("/onboarding")}
+              onClick={() => router.push("/onboarding")}
               className="mt-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm hover:bg-primary/90"
             >
               Go to Onboarding
@@ -330,7 +330,7 @@ const AgentLounge = () => {
                 : "Your agents completed the conversation. Review the compatibility details above."}
             </p>
             <button
-              onClick={() => navigate("/")}
+              onClick={() => router.push("/")}
               className="px-6 py-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-all font-display font-semibold"
             >
               Back to Home

@@ -1,7 +1,9 @@
 "use client";
 
-import App from "../App";
+import dynamic from "next/dynamic";
+
+const Index = dynamic(() => import("../pages/Index"), { ssr: false });
 
 export default function HomePage() {
-  return <App />;
+  return <Index />;
 }

@@ -1,10 +1,10 @@
 import { motion } from "framer-motion";
-import { useNavigate } from "react-router-dom";
+import { useRouter } from "next/navigation";
 import LiquidSilkBg from "@/components/LiquidSilkBg";
 import LegoRose from "@/components/LegoRose";
 
 const Index = () => {
-  const navigate = useNavigate();
+  const router = useRouter();
 
   return (
     <div className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden">
@@ -68,7 +68,7 @@ const Index = () => {
 
         {/* CTA Button */}
         <motion.button
-          onClick={() => navigate("/onboarding")}
+          onClick={() => router.push("/onboarding")}
           className="glass glow-rose px-10 py-4 rounded-2xl font-display font-semibold text-lg text-primary-foreground bg-primary/80 hover:bg-primary transition-all duration-300 cursor-pointer"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
