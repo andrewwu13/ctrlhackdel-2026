@@ -7,14 +7,14 @@ import LiquidSilkBg from "@/components/LiquidSilkBg";
 import AgentAvatar from "@/components/AgentAvatar";
 import ProfileReview from "@/components/ProfileReview";
 import { useConversationFlow } from "@/hooks/useInterviewFlow";
-import { BACKEND_URL } from "@/lib/config";
+import { fetchBackend } from "@/lib/config";
 import type { GeneratedProfile, ConversationMessage, CoreTopic } from "@/hooks/types";
 
 // ── Backend API Calls ──────────────────────────────────────────────
 
 const synthesizeAudio = async (text: string): Promise<Blob | null> => {
   try {
-    const response = await fetch(`${BACKEND_URL}/api/tts/synthesize`, {
+    const response = await fetchBackend("/api/tts/synthesize", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
@@ -30,7 +30,7 @@ const converseWithAgent = async (
   transcript: string,
   history: ConversationMessage[],
 ): Promise<{ agentText: string; topicsCovered: CoreTopic[]; isComplete: boolean }> => {
-  const response = await fetch(`${BACKEND_URL}/api/onboarding/converse`, {
+  const response = await fetchBackend("/api/onboarding/converse", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ transcript, history }),
@@ -42,7 +42,7 @@ const converseWithAgent = async (
 const generateProfileFromBackend = async (
   answers: string[],
 ): Promise<GeneratedProfile> => {
-  const response = await fetch(`${BACKEND_URL}/api/profile/generate`, {
+  const response = await fetchBackend("/api/profile/generate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ answers }),
@@ -56,6 +56,28 @@ const generateProfileFromBackend = async (
     hobbies: data.profile?.hobbies || [],
     lifestyle: data.profile?.lifestyle || [],
   } as GeneratedProfile;
+};
+
+const saveProfileToBackend = async (
+  userId: string,
+  profile: GeneratedProfile,
+  personality: {
+    openness: number;
+    extraversion: number;
+    agreeableness: number;
+    emotionalStability: number;
+  },
+) => {
+  const response = await fetchBackend("/api/profile/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId, profile, personality }),
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.error || "Failed to save profile");
+  }
 };
 
 // ── Topic label map ────────────────────────────────────────────────
@@ -78,6 +100,8 @@ const Onboarding = () => {
       ? localStorage.getItem("soulbound_userId")
       : null,
   );
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [launchError, setLaunchError] = useState("");
 
   const flow = useConversationFlow(
     synthesizeAudio,
@@ -85,10 +109,27 @@ const Onboarding = () => {
     generateProfileFromBackend,
   );
 
-  const handleLaunch = useCallback(() => {
+  const handleLaunch = useCallback(async () => {
     const storedUserId = localStorage.getItem("soulbound_userId");
-    navigate("/lounge", { state: { userId: storedUserId || userId } });
-  }, [navigate, userId]);
+    const resolvedUserId = storedUserId || userId;
+
+    if (!resolvedUserId) {
+      setLaunchError("Missing profile id. Please regenerate your profile.");
+      return;
+    }
+
+    setIsSavingProfile(true);
+    setLaunchError("");
+
+    try {
+      await saveProfileToBackend(resolvedUserId, flow.profile, flow.personality);
+      navigate("/account", { state: { userId: resolvedUserId } });
+    } catch (error) {
+      setLaunchError(error instanceof Error ? error.message : "Unable to save profile");
+    } finally {
+      setIsSavingProfile(false);
+    }
+  }, [flow.personality, flow.profile, navigate, userId]);
 
   return (
     <div className="relative min-h-screen overflow-hidden">
@@ -228,6 +269,8 @@ const Onboarding = () => {
             onVerifiedChange={flow.setVerified}
             onRegenerate={flow.regenerateProfile}
             onLaunch={handleLaunch}
+            isLaunching={isSavingProfile}
+            launchError={launchError}
             onUpdateListField={flow.updateListField}
           />
         )}

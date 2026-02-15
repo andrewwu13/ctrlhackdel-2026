@@ -34,6 +34,10 @@ export async function disconnectMongo(): Promise<void> {
 
 const userSchema = new mongoose.Schema(
   {
+    email: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
+    passwordHash: { type: String },
+    displayName: { type: String, trim: true },
+    accountCreatedAt: { type: Date },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
   },

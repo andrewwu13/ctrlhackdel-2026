@@ -12,6 +12,7 @@ import converseRouter from "./routes/converse";
 import matchRouter from "./routes/match";
 import profileRouter from "./routes/profile";
 import ttsRouter from "./routes/tts";
+import authRouter from "./routes/auth";
 
 // Socket handlers
 import { registerOnboardingHandlers } from "./sockets/onboarding.handler";
@@ -26,14 +27,14 @@ const httpServer = createServer(app);
 
 const io = new SocketIOServer(httpServer, {
   cors: {
-    origin: config.frontendUrl,
+    origin: config.frontendOrigins,
     methods: ["GET", "POST"],
   },
 });
 
 // ── Middleware ──────────────────────────────────────────────────────
 
-app.use(cors({ origin: config.frontendUrl }));
+app.use(cors({ origin: config.frontendOrigins }));
 app.use(express.json());
 
 // ── REST Routes ────────────────────────────────────────────────────
@@ -44,6 +45,7 @@ app.use("/api/onboarding", converseRouter);
 app.use("/api/match", matchRouter);
 app.use("/api/profile", profileRouter);
 app.use("/api/tts", ttsRouter);
+app.use("/api/auth", authRouter);
 
 // ── Socket.IO Namespaces ───────────────────────────────────────────
 

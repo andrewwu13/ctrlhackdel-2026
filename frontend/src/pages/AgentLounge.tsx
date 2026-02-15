@@ -4,7 +4,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { io, Socket } from "socket.io-client";
 import LiquidSilkBg from "@/components/LiquidSilkBg";
 import AgentAvatar from "@/components/AgentAvatar";
-import { BACKEND_URL } from "@/lib/config";
+import { fetchBackend, getBackendUrl } from "@/lib/config";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -66,7 +66,7 @@ const AgentLounge = () => {
 
     try {
       // Start a match session via REST
-      const res = await fetch(`${BACKEND_URL}/api/match/start`, {
+      const res = await fetchBackend("/api/match/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userAId: userId, userBId: "demo-agent" }),
@@ -81,9 +81,10 @@ const AgentLounge = () => {
 
       const data = await res.json();
       const sessionId = data.sessionId as string;
+      const backendUrl = getBackendUrl();
 
       // Connect to Socket.IO conversation namespace
-      const socket = io(`${BACKEND_URL}/conversation`, {
+      const socket = io(`${backendUrl}/conversation`, {
         query: { sessionId, userAId: userId, userBId: "demo-agent" },
       });
 

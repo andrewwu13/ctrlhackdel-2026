@@ -1,9 +1,19 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+const frontendOrigins = (
+  process.env.FRONTEND_URLS ||
+  process.env.FRONTEND_URL ||
+  "http://localhost:3000,http://localhost:3001"
+)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 export const config = {
   port: parseInt(process.env.PORT || "4000", 10),
-  frontendUrl: process.env.FRONTEND_URL || "http://localhost:3000",
+  frontendOrigins,
+  frontendUrl: frontendOrigins[0] || "http://localhost:3000",
 
   // MongoDB
   mongoUri: process.env.MONGO_URI || "mongodb://localhost:27017/ctrlhackdel",

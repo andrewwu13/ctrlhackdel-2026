@@ -2,6 +2,9 @@
 
 export interface User {
   id: string;
+  email?: string;
+  displayName?: string;
+  accountCreatedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }

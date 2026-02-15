@@ -9,11 +9,13 @@ type ProfileReviewProps = {
   isGeneratingProfile: boolean;
   generationError: string;
   canLaunch: boolean;
+  isLaunching: boolean;
+  launchError: string;
   onProfileChange: (profile: GeneratedProfile) => void;
   onPersonalityChange: (personality: PersonalitySliders) => void;
   onVerifiedChange: (verified: boolean) => void;
   onRegenerate: () => Promise<void>;
-  onLaunch: () => void;
+  onLaunch: () => void | Promise<void>;
   onUpdateListField: (
     field:
       | "coreValues"
@@ -119,6 +121,8 @@ const ProfileReview = ({
   isGeneratingProfile,
   generationError,
   canLaunch,
+  isLaunching,
+  launchError,
   onProfileChange,
   onPersonalityChange,
   onVerifiedChange,
@@ -319,13 +323,23 @@ const ProfileReview = ({
 
       <button
         onClick={onLaunch}
-        disabled={!canLaunch}
+        disabled={!canLaunch || isLaunching}
         className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-display font-semibold bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 transition-all"
       >
-        <Check className="w-4 h-4" />
-        Launch Your Agent
+        {isLaunching ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <Check className="w-4 h-4" />
+        )}
+        {isLaunching ? "Saving Profile..." : "Save Profile & Continue"}
       </button>
     </div>
+
+    {launchError && (
+      <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+        {launchError}
+      </div>
+    )}
   </motion.div>
 );
 
