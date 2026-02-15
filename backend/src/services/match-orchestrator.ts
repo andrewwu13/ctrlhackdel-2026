@@ -229,6 +229,18 @@ export class MatchOrchestrator {
     );
   }
 
+  /**
+   * Public cleanup — stops timers without producing results.
+   * Used when a client disconnects mid-conversation.
+   */
+  stop(): void {
+    if (this.timer) clearInterval(this.timer);
+    if (this.turnTimer) clearInterval(this.turnTimer);
+    this.timer = null;
+    this.turnTimer = null;
+    console.log(`[MatchOrchestrator] Session ${this.session.id} stopped`);
+  }
+
   getSession(): ConversationSession {
     return { ...this.session };
   }

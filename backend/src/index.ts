@@ -9,6 +9,8 @@ import { connectMongo } from "./db/mongo";
 import healthRouter from "./routes/health";
 import onboardingRouter from "./routes/onboarding";
 import matchRouter from "./routes/match";
+import profileRouter from "./routes/profile";
+import ttsRouter from "./routes/tts";
 
 // Socket handlers
 import { registerOnboardingHandlers } from "./sockets/onboarding.handler";
@@ -38,6 +40,8 @@ app.use(express.json());
 app.use("/api/health", healthRouter);
 app.use("/api/onboarding", onboardingRouter);
 app.use("/api/match", matchRouter);
+app.use("/api/profile", profileRouter);
+app.use("/api/tts", ttsRouter);
 
 // ── Socket.IO Namespaces ───────────────────────────────────────────
 

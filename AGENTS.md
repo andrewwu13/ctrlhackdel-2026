@@ -169,3 +169,33 @@ IMPLEMENTATION STATUS (all files stubbed — logic TODOs marked inline):
 [ ] Frontend pages — onboarding, conversation, match-summary pages scaffolded
 [ ] Frontend components — Chat, CompatibilityMeter, CountdownRing, RadarChart, ProfileSliders ready
 [ ] Docker — compose + Dockerfiles created
+
+frontend/
+├── src/
+│   ├── app/
+│   │   ├── layout.tsx              # Root layout, fonts, global providers
+│   │   ├── page.tsx                # Landing → redirect to /onboarding
+│   │   ├── onboarding/page.tsx     # Chat panel + profile vector sliders
+│   │   ├── conversation/page.tsx   # Live transcript, countdown, compatibility meter
+│   │   └── match-summary/page.tsx  # Score, radar chart, plan-date CTA
+│   ├── components/
+│   │   ├── Chat.tsx
+│   │   ├── CompatibilityMeter.tsx
+│   │   ├── CountdownRing.tsx
+│   │   ├── RadarChart.tsx
+│   │   └── ProfileSliders.tsx
+│   ├── hooks/
+│   │   ├── useSocket.ts            # Socket.IO client hook
+│   │   └── useCompatibility.ts     # Live score subscription
+│   ├── lib/
+│   │   ├── api.ts                  # REST fetch wrapper
+│   │   ├── socket.ts               # Socket.IO client singleton
+│   │   └── types.ts                # TS interfaces mirroring backend models
+│   └── styles/
+│       └── globals.css
+├── public/
+├── .env.local.example
+├── Dockerfile
+├── next.config.ts
+└── package.json
+
