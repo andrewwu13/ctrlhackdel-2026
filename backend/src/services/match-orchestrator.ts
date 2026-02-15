@@ -10,9 +10,9 @@ import { ConversationModel } from "../db/mongo";
 
 // ── Constants ──────────────────────────────────────────────────────
 
-const TOTAL_DURATION_SECONDS = 180;
-const WRAP_START_SECONDS = 170;
-const TURN_INTERVAL_MS = 6000; // ~6s per agent turn
+const TOTAL_DURATION_SECONDS = 60;
+const WRAP_START_SECONDS = 50;
+const TURN_INTERVAL_MS = 8000; // ~8s per agent turn
 
 // ── Match Orchestrator ─────────────────────────────────────────────
 
@@ -111,10 +111,13 @@ export class MatchOrchestrator {
 
     // Start alternating agent turns
     let isAgentATurn = true;
-    const openingMessage = "Hey! Nice to meet you. I've been looking forward to this.";
+    let turnNumber = 0;
+    const openingMessage = "Hey, nice to meet you.";
+
+    console.log(`[Conversation:${this.session.id.slice(0, 8)}] ▶ STARTED | duration=${TOTAL_DURATION_SECONDS}s | interval=${TURN_INTERVAL_MS}ms`);
 
     // Agent A opens
-    await this.handleAgentTurn(this.agentA, "agent_a", openingMessage, true);
+    await this.handleAgentTurn(this.agentA, "agent_a", openingMessage, true, ++turnNumber);
 
     this.turnTimer = setInterval(async () => {
       if (this.session.state === ConversationState.SCORE) {
@@ -131,7 +134,8 @@ export class MatchOrchestrator {
         currentAgent,
         sender as "agent_a" | "agent_b",
         lastMessage?.content || "",
-        false
+        false,
+        ++turnNumber
       );
 
       isAgentATurn = !isAgentATurn;
@@ -145,14 +149,18 @@ export class MatchOrchestrator {
     agent: AgentEngine,
     sender: "agent_a" | "agent_b",
     inputMessage: string,
-    isOpening: boolean
+    isOpening: boolean,
+    turnNumber: number
   ): Promise<void> {
+    const sid = this.session.id.slice(0, 8);
     const state =
       this.session.state === ConversationState.WRAP ? "WRAP" : "LIVE";
 
     const content = isOpening
       ? inputMessage
       : await agent.generateResponse(inputMessage, state);
+
+    const wordCount = content.split(/\s+/).length;
 
     const message: Message = {
       id: uuidv4(),
@@ -166,7 +174,7 @@ export class MatchOrchestrator {
     this.agentA.addToHistory(message);
     this.agentB.addToHistory(message);
 
-    // Enrich message with sentiment and topic embedding via Gemini
+    // Enrich message with sentiment and topic embedding
     await this.enrichmentService.enrich(message);
 
     this.session.messages.push(message);
@@ -195,6 +203,12 @@ export class MatchOrchestrator {
       scoreUpdate.compatibilityScore,
       scoreUpdate.breakdown as unknown as Record<string, number>
     );
+
+    // Detailed turn log
+    const preview = content.length > 80 ? content.slice(0, 80) + "…" : content;
+    console.log(
+      `[Conversation:${sid}] Turn ${turnNumber} | ${sender} | ${state} | ${wordCount}w | sentiment=${message.sentiment?.toFixed(2) ?? "?"} | compat=${scoreUpdate.compatibilityScore.toFixed(0)}% | "${preview}"`
+    );
   }
 
   /**
@@ -217,6 +231,12 @@ export class MatchOrchestrator {
     console.log(`[MatchOrchestrator] Conversation ${this.session.id} ended, saved to MongoDB`);
 
     const finalResult = await this.scoringEngine.computeFinalResult(this.session.id);
+
+    const sid = this.session.id.slice(0, 8);
+    console.log(
+      `[Conversation:${sid}] ■ ENDED | turns=${this.session.messages.length} | duration=${this.session.elapsedSeconds}s | score=${finalResult.compatibilityScore.toFixed(0)}% | recommend=${finalResult.recommendMatch}`
+    );
+
     this.callbacks.onConversationEnd(finalResult);
   }
 
