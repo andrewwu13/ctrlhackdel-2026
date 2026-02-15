@@ -1,6 +1,5 @@
 import { Namespace, Socket } from "socket.io";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { config } from "../config";
+import { generateWithRetry } from "../services/gemini-client";
 import { ProfileBuilder } from "../services/profile-builder";
 import type { UserProfile } from "../models/user";
 
@@ -23,7 +22,6 @@ import type { UserProfile } from "../models/user";
  *     "error"         — Error message
  */
 export function registerOnboardingHandlers(namespace: Namespace): void {
-  const genAI = new GoogleGenerativeAI(config.geminiApiKey);
   const profileBuilder = new ProfileBuilder();
 
   namespace.on("connection", (socket: Socket) => {
@@ -61,24 +59,33 @@ export function registerOnboardingHandlers(namespace: Namespace): void {
 
         if (currentQuestionIndex < coreQuestions.length) {
           // Still in core questions — acknowledge briefly and advance
-          const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-          const ackResult = await model.generateContent({
-            contents: [
+          try {
+            const ackText = await generateWithRetry(
               {
-                role: "user",
-                parts: [
+                contents: [
                   {
-                    text: `You are an onboarding assistant for a dating app. You highly value user experience, and you are eager to learn more about the user's preferences. You are lighthearted and fun, but you also take your job seriously. The user just answered: "${data.content}". Give a warm, brief acknowledgment, then naturally transition to asking: "${coreQuestions[currentQuestionIndex]}"`,
+                    role: "user",
+                    parts: [
+                      {
+                        text: `You are an onboarding assistant for a dating app. You highly value user experience, and you are eager to learn more about the user's preferences. You are lighthearted and fun, but you also take your job seriously. The user just answered: "${data.content}". Give a warm, brief acknowledgment, then naturally transition to asking: "${coreQuestions[currentQuestionIndex]}"`,
+                      },
+                    ],
                   },
                 ],
               },
-            ],
-          });
-          const ackText = ackResult.response.text();
+              { caller: "Onboarding:Socket:Ack" },
+            );
 
-          socket.emit("response", { content: ackText });
-          socket.emit("response_end", {});
-          conversationHistory.push({ role: "assistant", content: ackText });
+            socket.emit("response", { content: ackText });
+            socket.emit("response_end", {});
+            conversationHistory.push({ role: "assistant", content: ackText });
+          } catch (ackError) {
+            console.error("[Onboarding] Ack generation failed, using question directly:", ackError instanceof Error ? ackError.message : ackError);
+            const fallbackAck = `Thanks for sharing that! Here's what I'd love to know next: ${coreQuestions[currentQuestionIndex]}`;
+            socket.emit("response", { content: fallbackAck });
+            socket.emit("response_end", {});
+            conversationHistory.push({ role: "assistant", content: fallbackAck });
+          }
 
           socket.emit("question", {
             index: currentQuestionIndex,
@@ -87,28 +94,37 @@ export function registerOnboardingHandlers(namespace: Namespace): void {
           });
         } else {
           // Core questions done — switch to free-form LLM conversation
-          const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-          const historyText = conversationHistory
-            .map((m) => `${m.role}: ${m.content}`)
-            .join("\n");
+          try {
+            const historyText = conversationHistory
+              .map((m) => `${m.role}: ${m.content}`)
+              .join("\n");
 
-          const result = await model.generateContent({
-            contents: [
+            const response = await generateWithRetry(
               {
-                role: "user",
-                parts: [
+                contents: [
                   {
-                    text: `You are an onboarding assistant for a dating app. You highly value user experience, and you are eager to learn more about the user's preferences. You are lighthearted and fun, but you also take your job seriously. Here's the conversation so far:\n${historyText}\n\nNow have a natural follow-up conversation to learn more about the user. Ask ONE specific follow-up question based on their previous answers. Be warm, curious, conversational, and most importantly, CREATIVE. Keep your response to 2-3 sentences max.`,
+                    role: "user",
+                    parts: [
+                      {
+                        text: `You are an onboarding assistant for a dating app. You highly value user experience, and you are eager to learn more about the user's preferences. You are lighthearted and fun, but you also take your job seriously. Here's the conversation so far:\n${historyText}\n\nNow have a natural follow-up conversation to learn more about the user. Ask ONE specific follow-up question based on their previous answers. Be warm, curious, conversational, and most importantly, CREATIVE. Keep your response to 2-3 sentences max.`,
+                      },
+                    ],
                   },
                 ],
               },
-            ],
-          });
+              { caller: "Onboarding:Socket:FreeForm" },
+            );
 
-          const response = result.response.text();
-          socket.emit("response", { content: response });
-          socket.emit("response_end", {});
-          conversationHistory.push({ role: "assistant", content: response });
+            socket.emit("response", { content: response });
+            socket.emit("response_end", {});
+            conversationHistory.push({ role: "assistant", content: response });
+          } catch (freeFormError) {
+            console.error("[Onboarding] Free-form generation failed:", freeFormError instanceof Error ? freeFormError.message : freeFormError);
+            const fallbackResponse = "That's really fascinating! I'd love to learn even more about you. What's something that most people don't know about you?";
+            socket.emit("response", { content: fallbackResponse });
+            socket.emit("response_end", {});
+            conversationHistory.push({ role: "assistant", content: fallbackResponse });
+          }
         }
       } catch (error) {
         console.error("[Onboarding] Message handling error:", error);

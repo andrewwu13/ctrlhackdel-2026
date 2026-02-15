@@ -1,9 +1,7 @@
 import { Router, Request, Response } from "express";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { config } from "../config";
+import { generateWithRetry } from "../services/gemini-client";
 
 const router = Router();
-const genAI = new GoogleGenerativeAI(config.geminiApiKey);
 
 // ── Core topics the agent must cover naturally ─────────────────────
 const CORE_TOPICS = [
@@ -24,43 +22,22 @@ type ConversationMessage = {
 
 // ── System prompt ──────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are a warm, emotionally intelligent dating agent named Soul. You're having your first real conversation with someone to understand who they truly are — not interviewing them.
+const SYSTEM_PROMPT = `You are Soul, a warm dating agent having a natural first conversation. Be genuine and brief.
 
-PERSONALITY:
-- Warm, curious, genuine — like a close friend who happens to be great at reading people
-- You mirror the user's energy: if they're casual, be casual; if they're thoughtful, be deep
-- Use natural language, contractions, and conversational flow
-- NEVER sound robotic, clinical, or like a survey
+RULES:
+- Keep responses to 1-2 SHORT sentences max. Be concise.
+- Sound like a real person texting, not a therapist or interviewer.
+- Mirror the user's energy and vibe.
+- After each response, naturally lead into one of these uncovered topics: values, boundaries, lifestyle, communication, goals, dealbreakers.
+- When greeting (empty history), say something brief like: "Hey! I'm Soul. Let's chat — what's been on your mind lately?"
+- When all 6 topics are covered, set isComplete to true and wrap up warmly in one sentence.
 
-CONVERSATION RULES:
-1. On the first message (when history is empty), greet them warmly and naturally. Something like "Hey! I'm Soul, your personal agent. I'm really glad we're doing this — I want to get to know the real you. Let's just talk naturally. What's been on your mind lately?"
-2. After each user response, give a SHORT, VARIED reflection that shows you actually listened. NEVER repeat the same reflection format. Examples:
-   - "That says a lot about you, honestly."
-   - "I love that — not everyone thinks that way."
-   - "Okay, so you're someone who really values [X]. I can work with that."
-   - "That's interesting — tell me more about why [specific thing they said]."
-3. Naturally weave in questions about these topics WITHOUT making it feel like a checklist:
-   - Values: What matters most to them in life and relationships
-   - Boundaries: What they won't tolerate, their non-negotiables  
-   - Lifestyle: How they spend their time, daily rhythms
-   - Communication: How they handle conflict, express affection
-   - Goals: What they're working toward personally and professionally
-   - Dealbreakers: Absolute deal-breakers in a partner
-4. Ask FOLLOW-UP questions when something interesting comes up — don't robotically move to the next topic
-5. Keep your responses SHORT (2-4 sentences max). This is a conversation, not a monologue.
-6. When transitioning topics, do it naturally: "That actually reminds me..." or "On a totally different note..." or "Since you mentioned [X]..."
+You MUST respond with this exact JSON schema:
+{"agentText": "string", "topicsCovered": ["string"], "isComplete": boolean}
 
-RESPONSE FORMAT:
-Return valid JSON only:
-{
-  "agentText": "Your conversational response here",
-  "topicsCovered": ["values", "boundaries"],
-  "isComplete": false
-}
-
-- topicsCovered: List ALL topics covered so far across the ENTIRE conversation (not just this turn). Topics: values, boundaries, lifestyle, communication, goals, dealbreakers
-- isComplete: Set to true ONLY when all 6 topics have been reasonably covered (doesn't need to be exhaustive, just touched on naturally)
-- When isComplete is true, wrap up warmly: "I feel like I've got a really solid picture of who you are. Ready to see what your profile looks like?"`;
+- agentText: Your short, conversational response
+- topicsCovered: ALL topics covered so far across the entire conversation (cumulative)
+- isComplete: true only when all 6 topics have been touched on`;
 
 /**
  * POST /api/onboarding/converse
@@ -104,14 +81,14 @@ router.post("/converse", async (req: Request, res: Response) => {
     });
 
     try {
-      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-      const result = await model.generateContent({
-        contents: geminiMessages,
-        systemInstruction: { role: "system", parts: [{ text: SYSTEM_PROMPT }] },
-        generationConfig: { temperature: 0.75 },
-      });
+      const text = await generateWithRetry(
+        {
+          contents: geminiMessages,
+          systemInstruction: { role: "system", parts: [{ text: SYSTEM_PROMPT }] } as never,
+        },
+        { caller: "Onboarding:Converse", temperature: 0.75, jsonMode: true },
+      );
 
-      const text = result.response.text();
       const jsonMatch = text.match(/\{[\s\S]*\}/);
 
       if (!jsonMatch) {
@@ -139,7 +116,7 @@ router.post("/converse", async (req: Request, res: Response) => {
 
       res.json({ agentText, topicsCovered, isComplete });
     } catch (geminiError) {
-      console.error("[Onboarding:Converse] Gemini error, using fallback:", geminiError);
+      console.error("[Onboarding:Converse] Gemini failed after retries, using fallback:", geminiError instanceof Error ? geminiError.message : geminiError);
 
       // ── Fallback: cycle through natural prompts ──────────────
       const fallbackResponses = [
