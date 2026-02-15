@@ -6,6 +6,7 @@ import {
   SCORE_WEIGHTS,
   EMA_ALPHA,
 } from "../models/compatibility";
+import { CompatibilityResultModel } from "../db/mongo";
 
 // ── Scoring Engine ─────────────────────────────────────────────────
 
@@ -125,10 +126,10 @@ export class ScoringEngine {
 
   // ── Final Result ────────────────────────────────────────────────
 
-  computeFinalResult(sessionId: string): CompatibilityResult {
+  async computeFinalResult(sessionId: string): Promise<CompatibilityResult> {
     const finalScore = Math.round(this.smoothedScore);
 
-    return {
+    const result: CompatibilityResult = {
       sessionId,
       compatibilityScore: finalScore,
       breakdown: {
@@ -142,6 +143,12 @@ export class ScoringEngine {
       recommendMatch: finalScore >= 65 && this.hardConstraintPassed,
       computedAt: new Date(),
     };
+
+    // Persist to MongoDB
+    await CompatibilityResultModel.create(result);
+    console.log(`[ScoringEngine] Saved CompatibilityResult for session ${sessionId} (score: ${finalScore})`);
+
+    return result;
   }
 
   // ── Utility Functions ───────────────────────────────────────────
