@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useRouter, useSearchParams } from "next/navigation";
 import { io, Socket } from "socket.io-client";
 import LiquidSilkBg from "@/components/LiquidSilkBg";
 import AgentAvatar from "@/components/AgentAvatar";
@@ -33,14 +33,18 @@ type ConversationState = "INIT" | "LIVE" | "WRAP" | "SCORE";
 
 // ── Component ──────────────────────────────────────────────────────
 
+
 const AgentLounge = () => {
-  const navigate = useNavigate();
-  const location = useLocation();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const socketRef = useRef<Socket | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const userId = (location.state as { userId?: string })?.userId
-    || localStorage.getItem("soulbound_userId");
+  const userId =
+    searchParams?.get("userId") ||
+    (typeof window !== "undefined"
+      ? localStorage.getItem("soulbound_userId")
+      : null);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [score, setScore] = useState(0);
@@ -50,6 +54,10 @@ const AgentLounge = () => {
   const [result, setResult] = useState<ConversationResult | null>(null);
   const [error, setError] = useState("");
   const [connecting, setConnecting] = useState(true);
+
+  // Manual Activation State
+  const [myAgentActive, setMyAgentActive] = useState(false);
+  const [peerAgentReady, setPeerAgentReady] = useState(false);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -75,13 +83,14 @@ const AgentLounge = () => {
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         throw new Error(
-          (errData as { error?: string }).error || "Failed to start match",
+          (errData as { error?: string }).error || "Failed to start match"
         );
       }
 
       const data = await res.json();
       const sessionId = data.sessionId as string;
       const backendUrl = getBackendUrl();
+
 
       // Connect to Socket.IO conversation namespace
       const socket = io(`${backendUrl}/conversation`, {
@@ -92,7 +101,23 @@ const AgentLounge = () => {
 
       socket.on("connect", () => {
         setConnecting(false);
-        socket.emit("start");
+        // Do NOT emit "start" automatically anymore
+      });
+
+      socket.on("agent_status_update", (data: any) => {
+        // userA is me, userB is peer (simplified for this demo flow)
+        if (data.userAId === userId) {
+          setMyAgentActive(data.userAReady);
+        }
+        // If I am userA, then userB is peer.
+        // Logic might need to be robust if roles swap, but for now:
+        if (data.userAId === userId) {
+          setPeerAgentReady(data.userBReady);
+        } else {
+          // If I happened to be userB (unlikely in this flow but possible)
+          setMyAgentActive(data.userBReady);
+          setPeerAgentReady(data.userAReady);
+        }
       });
 
       socket.on("agent_message", (msg: ChatMessage) => {
@@ -104,7 +129,7 @@ const AgentLounge = () => {
         (data: { score: number; breakdown: ScoreBreakdown }) => {
           setScore(data.score);
           setBreakdown(data.breakdown);
-        },
+        }
       );
 
       socket.on("state_change", (data: { state: ConversationState }) => {
@@ -140,6 +165,13 @@ const AgentLounge = () => {
       socketRef.current?.disconnect();
     };
   }, [startMatch]);
+
+  const toggleActive = () => {
+    if (!socketRef.current) return;
+    const newState = !myAgentActive;
+    setMyAgentActive(newState); // Optimistic update
+    socketRef.current.emit("set_agent_active", { active: newState });
+  };
 
   // ── Helpers ──────────────────────────────────────────────────
   const formatTime = (seconds: number) => {
@@ -185,7 +217,7 @@ const AgentLounge = () => {
           <div className="glass-strong rounded-xl p-4 mb-4 border border-destructive/30">
             <p className="text-destructive text-sm">{error}</p>
             <button
-              onClick={() => navigate("/onboarding")}
+              onClick={() => router.push("/onboarding")}
               className="mt-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm hover:bg-primary/90"
             >
               Go to Onboarding
@@ -209,7 +241,54 @@ const AgentLounge = () => {
         {!connecting && !error && (
           <div className="flex-1 flex gap-4 min-h-0">
             {/* Chat panel */}
-            <div className="flex-1 flex flex-col glass-strong rounded-2xl overflow-hidden">
+            <div className="flex-1 flex flex-col glass-strong rounded-2xl overflow-hidden relative">
+              {/* Manual Activation Overlay (if in INIT and not yet running) */}
+              {state === "INIT" && (
+                <div className="absolute inset-0 z-20 backdrop-blur-sm bg-background/40 flex flex-col items-center justify-center p-6 text-center">
+                  <AgentAvatar mode={myAgentActive ? "thinking" : "idle"} />
+                  <h3 className="mt-4 text-xl font-display font-bold">
+                    {myAgentActive ? "Waiting for Peer..." : "Ready to Start?"}
+                  </h3>
+                  <p className="text-muted-foreground max-w-sm mt-2 mb-6">
+                    {myAgentActive
+                      ? "Your agent is active. Waiting for the other person to connect."
+                      : "Activate your agent to begin the conversation."}
+                  </p>
+
+                  <div className="flex flex-col gap-3 w-full max-w-xs">
+                    <button
+                      onClick={toggleActive}
+                      className={`px-6 py-3 rounded-xl font-semibold transition-all ${
+                        myAgentActive
+                          ? "bg-accent/20 text-accent border border-accent/50 hover:bg-accent/30"
+                          : "bg-primary text-primary-foreground hover:scale-105 shadow-glow"
+                      }`}
+                    >
+                      {myAgentActive ? "Deactivate Agent" : "Activate Agent"}
+                    </button>
+
+                    <div className="flex items-center justify-between text-xs px-2 mt-2 font-mono text-muted-foreground">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className={`w-2 h-2 rounded-full ${
+                            myAgentActive ? "bg-green-500" : "bg-red-500"
+                          }`}
+                        />
+                        You
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div
+                          className={`w-2 h-2 rounded-full ${
+                            peerAgentReady ? "bg-green-500" : "bg-red-500"
+                          }`}
+                        />
+                        Peer
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Messages */}
               <div className="flex-1 overflow-y-auto p-4 space-y-3">
                 <AnimatePresence>
@@ -218,7 +297,9 @@ const AgentLounge = () => {
                       key={msg.id}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className={`flex ${msg.sender === "agent_a" ? "justify-start" : "justify-end"}`}
+                      className={`flex ${
+                        msg.sender === "agent_a" ? "justify-start" : "justify-end"
+                      }`}
                     >
                       <div
                         className={`max-w-[75%] rounded-2xl px-4 py-3 ${
@@ -331,7 +412,7 @@ const AgentLounge = () => {
                 : "Your agents completed the conversation. Review the compatibility details above."}
             </p>
             <button
-              onClick={() => navigate("/")}
+              onClick={() => router.push("/")}
               className="px-6 py-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-all font-display font-semibold"
             >
               Back to Home

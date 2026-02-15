@@ -80,6 +80,7 @@ const profileVectorSchema = new mongoose.Schema(
 const conversationSchema = new mongoose.Schema(
   {
     sessionId: { type: String, required: true, unique: true, index: true },
+    _id: { type: String, required: true },
     userAId: { type: String, required: true },
     userBId: { type: String, required: true },
     state: {

@@ -1,25 +1,17 @@
+
 import { Namespace, Socket } from "socket.io";
 import { MatchOrchestrator } from "../services/match-orchestrator";
 import { ProfileBuilder } from "../services/profile-builder";
 import type { MatchCallbacks } from "../services/match-orchestrator";
+import { SessionRegistry } from "../services/session-registry";
 
 /**
  * Socket.IO handler for the /conversation namespace.
  * Streams the real-time agent-to-agent conversation to the client.
- *
- * Events:
- *   Server → Client:
- *     "agent_message"        — New message from an agent
- *     "compatibility_update" — Updated score + breakdown
- *     "state_change"         — Conversation state transition (INIT→LIVE→WRAP→SCORE)
- *     "timer_tick"           — Elapsed seconds update
- *     "conversation_end"     — Final results payload
- *     "error"                — Error message
- *
- *   Client → Server:
- *     "start"                — Client signals ready to begin
  */
 export function registerConversationHandlers(namespace: Namespace): void {
+  const registry = SessionRegistry.getInstance();
+
   namespace.on("connection", (socket: Socket) => {
     const sessionId = socket.handshake.query.sessionId as string;
     const userAId = socket.handshake.query.userAId as string;
@@ -32,37 +24,113 @@ export function registerConversationHandlers(namespace: Namespace): void {
     }
 
     console.log(`[Conversation] Client connected for session: ${sessionId}, users: ${userAId}, ${userBId}`);
+    console.log(
+      `[Conversation] Client connected for session: ${sessionId}, users: ${userAId}, ${userBId}`
+    );
 
-    // Join a room for this session so multiple observers can watch
+    // Join a room for this session
     socket.join(sessionId);
 
-    let orchestrator: MatchOrchestrator | null = null;
+    // Initialize or get session state
+    let session = registry.getSession(sessionId);
+    if (!session) {
+      session = registry.createSession(sessionId, userAId, userBId);
+      console.log(`[Conversation] Initialized session registry for ${sessionId}`);
+    }
 
-    // ── Client signals ready ────────────────────────────────────
-    socket.on("start", async () => {
+    // Send initial status to the connecting client
+    socket.emit("agent_status_update", {
+      userAId: session.userAId,
+      userAReady: session.userAReady,
+      userBId: session.userBId,
+      userBReady: session.userBReady,
+    });
+
+    // ── Client sets active status ───────────────────────────────
+    socket.on("set_agent_active", async (data: { active: boolean }) => {
+      console.log(
+        `[Conversation] User ${userAId} set active: ${data.active} for session ${sessionId}`
+      );
+
+      const updatedSession = registry.setAgentReady(
+        sessionId,
+        userAId, // The user connected on this socket is userA (usually)
+        data.active
+      );
+
+      if (!updatedSession) return;
+
+      // Broadcast new status to everyone in the room
+      namespace.to(sessionId).emit("agent_status_update", {
+        userAId: updatedSession.userAId,
+        userAReady: updatedSession.userAReady,
+        userBId: updatedSession.userBId,
+        userBReady: updatedSession.userBReady,
+      });
+
+      // Check if both are ready and we haven't started yet
+      if (
+        updatedSession.userAReady &&
+        updatedSession.userBReady &&
+        !updatedSession.orchestrator
+      ) {
+        await startConversation(sessionId, updatedSession.userAId, updatedSession.userBId);
+      }
+    });
+
+    // ── Helper to start conversation ────────────────────────────
+    const startConversation = async (
+      sId: string,
+      uAId: string,
+      uBId: string
+    ) => {
       try {
-        // Fetch profiles
-        const profileA = await ProfileBuilder.getProfileVector(userAId);
-        const profileB = await ProfileBuilder.getProfileVector(userBId);
+        console.log(`[Conversation] Both agents ready. Starting orchestrator for ${sId}`);
 
-        if (!profileA || !profileB) {
-          socket.emit("error", {
-            message: `Missing profile: ${!profileA ? userAId : userBId}`,
+        // Fetch profiles
+        const profileA = await ProfileBuilder.getProfileVector(uAId);
+        let profileB = await ProfileBuilder.getProfileVector(uBId);
+
+        if (!profileA) {
+          namespace.to(sId).emit("error", {
+            message: `Missing profile for ${uAId}. Complete onboarding first.`,
           });
           return;
         }
 
-        // Build profile summaries
-        const summaryA = `User ${userAId} - Openness: ${profileA.personality.openness}, Extraversion: ${profileA.personality.extraversion}`;
-        const summaryB = `User ${userBId} - Openness: ${profileB.personality.openness}, Extraversion: ${profileB.personality.extraversion}`;
+        if (!profileB) {
+          console.log(
+            `[Conversation] No ProfileVector for ${uBId}, generating demo agent`
+          );
+          const now = new Date();
+          profileB = {
+            userId: uBId,
+            embedding: new Array(768).fill(0).map(() => Math.random() * 2 - 1),
+            personality: {
+              openness: 0.7,
+              conscientiousness: 0.6,
+              extraversion: 0.65,
+              agreeableness: 0.75,
+              neuroticism: 0.3,
+            },
+            hardFilters: {},
+            softFilters: {},
+            createdAt: now,
+            updatedAt: now,
+          };
+        }
 
-        // Create callbacks that emit to the socket room
+        // Build summaries
+        const summaryA = `User ${uAId} - Openness: ${profileA.personality.openness}, Extraversion: ${profileA.personality.extraversion}`;
+        const summaryB = `User ${uBId} - Openness: ${profileB.personality.openness}, Extraversion: ${profileB.personality.extraversion}`;
+
+        // Create callbacks
         const callbacks: MatchCallbacks = {
           onStateChange: (state) => {
-            namespace.to(sessionId).emit("state_change", { state });
+            namespace.to(sId).emit("state_change", { state });
           },
           onAgentMessage: (message) => {
-            namespace.to(sessionId).emit("agent_message", {
+            namespace.to(sId).emit("agent_message", {
               id: message.id,
               sender: message.sender,
               content: message.content,
@@ -70,47 +138,51 @@ export function registerConversationHandlers(namespace: Namespace): void {
             });
           },
           onCompatibilityUpdate: (score, breakdown) => {
-            namespace.to(sessionId).emit("compatibility_update", {
+            namespace.to(sId).emit("compatibility_update", {
               score,
               breakdown,
             });
           },
           onTimerTick: (elapsedSeconds) => {
-            namespace.to(sessionId).emit("timer_tick", { elapsedSeconds });
+            namespace.to(sId).emit("timer_tick", { elapsedSeconds });
           },
           onConversationEnd: (result) => {
-            namespace.to(sessionId).emit("conversation_end", {
+            namespace.to(sId).emit("conversation_end", {
               compatibilityScore: result.compatibilityScore,
               breakdown: result.breakdown,
               recommendMatch: result.recommendMatch,
               trendOverTime: result.trendOverTime,
             });
+            // Cleanup orchestrator ref when done?
+            // registry.setOrchestrator(sId, undefined); // Optional: keep it to prevent restart
           },
         };
 
         orchestrator = new MatchOrchestrator(
           sessionId,
+        const orchestrator = new MatchOrchestrator(
           profileA,
           summaryA,
           profileB,
           summaryB,
-          callbacks,
+          callbacks
         );
 
-        console.log(`[Conversation] Starting orchestrator for session ${sessionId}`);
+        registry.setOrchestrator(sId, orchestrator);
         await orchestrator.start();
       } catch (error) {
         console.error("[Conversation] Start error:", error);
-        socket.emit("error", { message: "Failed to start conversation" });
+        namespace.to(sId).emit("error", { message: "Failed to start conversation" });
       }
-    });
+    };
 
     socket.on("disconnect", () => {
       console.log(`[Conversation] Client disconnected from session: ${sessionId}`);
-      if (orchestrator) {
-        orchestrator.stop();
-        orchestrator = null;
-      }
+      // Note: We do NOT stop the orchestrator just because one client left,
+      // as the other might still be watching.
+      // Orchestraor cleanup happens in registry.removeSession() if needed,
+      // or via timeouts.
     });
   });
 }
+
