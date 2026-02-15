@@ -119,9 +119,24 @@ export function registerConversationHandlers(namespace: Namespace): void {
           };
         }
 
-        // Build summaries
-        const summaryA = `User ${uAId} - Openness: ${profileA.personality.openness}, Extraversion: ${profileA.personality.extraversion}`;
-        const summaryB = `User ${uBId} - Openness: ${profileB.personality.openness}, Extraversion: ${profileB.personality.extraversion}`;
+        // Build rich summaries from personality traits
+        const describeTrait = (val: number, high: string, low: string) =>
+          val >= 0.7 ? high : val <= 0.3 ? low : "";
+
+        const buildSummary = (id: string, p: typeof profileA.personality) => {
+          const traits = [
+            describeTrait(p.openness, "creative and curious", "practical and traditional"),
+            describeTrait(p.conscientiousness, "organized and reliable", "spontaneous and flexible"),
+            describeTrait(p.extraversion, "outgoing and energetic", "introverted and reserved"),
+            describeTrait(p.agreeableness, "warm and trusting", "direct and skeptical"),
+            describeTrait(p.neuroticism, "emotionally sensitive", "calm and steady"),
+          ].filter(Boolean);
+
+          return `Person ${id.slice(0, 4)} — ${traits.join(", ") || "balanced personality"}. O=${p.openness} C=${p.conscientiousness} E=${p.extraversion} A=${p.agreeableness} N=${p.neuroticism}`;
+        };
+
+        const summaryA = buildSummary(uAId, profileA.personality);
+        const summaryB = buildSummary(uBId, profileB.personality);
 
         // Create callbacks
         const callbacks: MatchCallbacks = {

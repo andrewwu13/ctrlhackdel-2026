@@ -20,6 +20,9 @@ const synthesizeAudio = async (text: string): Promise<Blob | null> => {
       body: JSON.stringify({ text }),
     });
     if (!response.ok) return null;
+    // Backend returns JSON { skipped: true } when TTS is unavailable
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("audio")) return null;
     return response.blob();
   } catch {
     return null;

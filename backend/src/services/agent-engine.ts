@@ -4,30 +4,27 @@ import type { Message } from "../models/conversation";
 
 // ── System Prompt Template ─────────────────────────────────────────
 
-const AGENT_SYSTEM_PROMPT = `You are acting as a person on a date. You embody their personality, values, and communication style.
-You are NOT an AI assistant — you ARE this person, having a genuine conversation.
+const AGENT_SYSTEM_PROMPT = `You are a real person on a first date. You ARE this person — not an AI.
 
-PERSONALITY PROFILE:
+YOUR PERSONALITY:
 {profile_summary}
 
-CONVERSATION RULES (strict):
-1. Never ask two direct questions consecutively — always share something about yourself first.
-2. Always respond emotionally before probing — acknowledge what the other person said.
-3. Transition topics via natural association, not abrupt changes.
-4. Maintain reciprocity — no monologues. Keep responses 2-4 sentences.
-5. Be warm, genuine, and curious.
+RULES:
+- Reply in 1–2 SHORT sentences only. This is texting, not an essay.
+- Be yourself. If you disagree, say so honestly. Don't be a people-pleaser.
+- Don't ask a question every turn. Sometimes just react or share.
+- If something feels off or incompatible, express it naturally — "hmm I'm not sure I see it that way" etc.
+- Never use the word "boundaries" or "values" — talk like a real person.
+- No exclamation marks in every sentence. Vary your energy.
+- Reference specific things the other person said. Don't be generic.
 
-INTERNAL OBJECTIVES (pursue organically, do NOT announce these):
-- Extract 2 value signals from the other person
-- Extract 1 lifestyle constraint
-- Identify 1 shared interest
-- Gauge emotional tone and stability
+STATE: {state}
+{wrap_instruction}
 
-CURRENT CONVERSATION STATE: {state}
-{wrap_instruction}`;
+Reply with ONLY your message. No labels, no quotes, no "you:" prefix.`;
 
 const WRAP_INSTRUCTION =
-  "The conversation is wrapping up. Offer a final impression, share what you enjoyed most, and end warmly.";
+  "Time's almost up. Give a brief honest impression — did you vibe or not? 1 sentence max.";
 
 // ── Agent Engine ───────────────────────────────────────────────────
 
@@ -61,26 +58,39 @@ export class AgentEngine {
         conversationState === "WRAP" ? WRAP_INSTRUCTION : ""
       );
 
-    // Build conversation history for context
-    const historyFormatted = this.sessionHistory
-      .map((m) => `${m.sender}: ${m.content}`)
+    // Build conversation history for context (last 10 messages max)
+    const recentHistory = this.sessionHistory.slice(-10);
+    const historyFormatted = recentHistory
+      .map((m) => `${m.sender === "agent_a" ? "person_a" : "person_b"}: ${m.content}`)
       .join("\n");
 
-    const prompt = `${historyFormatted}\nother_person: ${otherMessage}\nyou:`;
+    const prompt = `${historyFormatted}\nthem: ${otherMessage}\nyou:`;
 
     try {
-      const response = await generateWithRetry(
+      let response = await generateWithRetry(
         {
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           systemInstruction: { role: "system", parts: [{ text: systemPrompt }] } as never,
         },
-        { caller: "AgentEngine" },
+        { caller: "AgentEngine", temperature: 0.9 },
       );
+
+      // Strip any prefix labels the model might add
+      response = response
+        .replace(/^(you|me|person_[ab]|agent_[ab])\s*:\s*/i, "")
+        .replace(/^["']|["']$/g, "")
+        .trim();
+
+      // Truncate overly long responses to first 2 sentences
+      const sentences = response.match(/[^.!?]+[.!?]+/g);
+      if (sentences && sentences.length > 2) {
+        response = sentences.slice(0, 2).join("").trim();
+      }
 
       return response;
     } catch (error) {
       console.error("[AgentEngine] Generation error after retries:", error instanceof Error ? error.message : error);
-      return "I'd love to hear more about that...";
+      return "Hmm, that's interesting. Tell me more.";
     }
   }
 
