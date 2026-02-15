@@ -1,0 +1,14 @@
+{
+  "name": "ctrlhackdel-2026",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present --parallel",
+    "build": "npm run build --workspaces --if-present",
+    "start": "npm run start --workspaces --if-present --parallel"
+  }
+}
