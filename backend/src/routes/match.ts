@@ -52,6 +52,7 @@ router.get("/candidates", async (req: Request, res: Response) => {
 
       return {
         userId: other.userId,
+        displayName: (other as Record<string, unknown>).displayName as string || "",
         preScore: Math.max(0, Math.min(100, preScore)),
         personality: other.personality,
       };

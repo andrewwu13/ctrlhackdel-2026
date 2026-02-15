@@ -49,6 +49,9 @@ const userSchema = new mongoose.Schema(
 const userProfileSchema = new mongoose.Schema(
   {
     userId: { type: String, required: true, index: true },
+    displayName: { type: String, trim: true },
+    headline: { type: String, trim: true },
+    bio: { type: String, trim: true },
     values: [String],
     boundaries: [String],
     lifestyle: [String],
@@ -78,6 +81,8 @@ const userProfileSchema = new mongoose.Schema(
 const profileVectorSchema = new mongoose.Schema(
   {
     userId: { type: String, required: true, unique: true },
+    displayName: { type: String, trim: true },
+    bio: { type: String, trim: true },
     embedding: [Number],
     personality: {
       openness: Number,

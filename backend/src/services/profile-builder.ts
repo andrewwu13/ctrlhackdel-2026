@@ -24,9 +24,16 @@ export class ProfileBuilder {
     };
 
     // Persist UserProfile to MongoDB (upsert by userId)
+    const displayName = profile.freeformPreferences?.name || "";
+    const bio = profile.freeformPreferences?.bio || "";
+    const headline = profile.freeformPreferences?.headline || "";
+
     await UserProfileModel.findOneAndUpdate(
       { userId: profile.userId },
       {
+        displayName,
+        headline,
+        bio,
         values: profile.values,
         boundaries: profile.boundaries,
         lifestyle: profile.lifestyle,
@@ -43,6 +50,8 @@ export class ProfileBuilder {
     await ProfileVectorModel.findOneAndUpdate(
       { userId: profile.userId },
       {
+        displayName,
+        bio,
         embedding: profileVector.embedding,
         personality: profileVector.personality,
         hardFilters: profileVector.hardFilters,

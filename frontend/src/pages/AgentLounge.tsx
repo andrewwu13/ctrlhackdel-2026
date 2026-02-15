@@ -55,6 +55,7 @@ type UpcomingDate = {
 
 type MatchCandidate = {
   userId: string;
+  displayName: string;
   preScore: number;
 };
 
@@ -444,10 +445,11 @@ const AgentLounge = () => {
 
       const payload = await response.json();
       const sessionId = payload.sessionId as string;
-      const peerName = matchUserId === "demo-agent"
-        ? (userSnapshot?.suggestedMatchPersona?.name ?? "Ava")
-        : `Match ${conversationCounterRef.current}`;
-      const label = `Match #${conversationCounterRef.current} (${nextCandidate.preScore}%)`;
+      const peerName = nextCandidate.displayName
+        || (matchUserId === "demo-agent"
+          ? (userSnapshot?.suggestedMatchPersona?.name ?? "Ava")
+          : `User ${matchUserId.slice(0, 6)}`);
+      const label = `${peerName} (${nextCandidate.preScore}%)`;
       conversationCounterRef.current += 1;
 
       const persona = userSnapshot?.suggestedMatchPersona ?? {
@@ -460,7 +462,7 @@ const AgentLounge = () => {
       const baseConversation: LoungeConversation = {
         sessionId,
         label,
-        peerLabel: matchUserId === "demo-agent" ? persona.name : peerName,
+        peerLabel: peerName,
         peerAvatarSeed: matchUserId === "demo-agent" ? persona.avatarSeed : hashSeed(matchUserId),
         state: "INIT",
         messages: [],
