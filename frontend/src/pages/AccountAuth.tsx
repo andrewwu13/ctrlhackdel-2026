@@ -1,17 +1,59 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useLocation, useNavigate } from "react-router-dom";
 import LiquidSilkBg from "@/components/LiquidSilkBg";
 import { fetchBackend } from "@/lib/config";
 
 type AuthMode = "register" | "login";
+const GOOGLE_SCRIPT_ID = "google-identity-services";
+const GOOGLE_CLIENT_ID =
+  (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_GOOGLE_CLIENT_ID) || "";
+const hasValidGoogleClientId =
+  GOOGLE_CLIENT_ID.endsWith(".apps.googleusercontent.com") &&
+  !GOOGLE_CLIENT_ID.toLowerCase().includes("your_google_oauth_web_client_id_here");
+
+type GoogleCredentialResponse = {
+  credential?: string;
+};
+
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (options: {
+            client_id: string;
+            callback: (response: GoogleCredentialResponse) => void;
+            auto_select?: boolean;
+            cancel_on_tap_outside?: boolean;
+          }) => void;
+          renderButton: (
+            parent: HTMLElement,
+            options: {
+              theme?: "outline" | "filled_blue" | "filled_black";
+              size?: "large" | "medium" | "small";
+              text?:
+                | "signin_with"
+                | "signup_with"
+                | "continue_with"
+                | "signin";
+              shape?: "pill" | "rectangular";
+              width?: number;
+            },
+          ) => void;
+        };
+      };
+    };
+  }
+}
 
 const AccountAuth = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const locationUserId = (location.state as { userId?: string } | null)?.userId || null;
+  const googleButtonRef = useRef<HTMLDivElement | null>(null);
 
   const userId = useMemo(() => {
     if (locationUserId) return locationUserId;
@@ -26,6 +68,111 @@ const AccountAuth = () => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const finishAuth = useCallback(
+    (payload: { userId: string; email?: string; hasProfile?: boolean }) => {
+      if (!payload.hasProfile) {
+        throw new Error("This account has no saved profile. Complete onboarding first.");
+      }
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("soulbound_userId", payload.userId);
+        if (payload.email) {
+          window.localStorage.setItem("soulbound_account_email", payload.email);
+        }
+      }
+      navigate("/lounge", { state: { userId: payload.userId } });
+    },
+    [navigate],
+  );
+
+  const handleGoogleCredential = useCallback(
+    async (idToken?: string) => {
+      if (!idToken) {
+        setError("Google sign-in returned no token.");
+        return;
+      }
+
+      setIsSubmitting(true);
+      setError("");
+
+      try {
+        const response = await fetchBackend("/api/auth/google", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            idToken,
+            userId: userId || undefined,
+          }),
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.error || "Google sign-in failed");
+        }
+
+        finishAuth(payload);
+      } catch (submitError) {
+        setError(
+          submitError instanceof Error ? submitError.message : "Google sign-in failed",
+        );
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [finishAuth, userId],
+  );
+
+  useEffect(() => {
+    if (!hasValidGoogleClientId || typeof window === "undefined") return;
+    let cancelled = false;
+
+    const renderGoogleButton = () => {
+      if (cancelled || !window.google || !googleButtonRef.current) return;
+
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: (response) => {
+          void handleGoogleCredential(response.credential);
+        },
+        auto_select: false,
+        cancel_on_tap_outside: true,
+      });
+
+      googleButtonRef.current.innerHTML = "";
+      window.google.accounts.id.renderButton(googleButtonRef.current, {
+        theme: "outline",
+        size: "large",
+        text: mode === "register" ? "continue_with" : "signin_with",
+        shape: "pill",
+        width: 320,
+      });
+    };
+
+    if (window.google) {
+      renderGoogleButton();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    let script = document.getElementById(GOOGLE_SCRIPT_ID) as HTMLScriptElement | null;
+    if (!script) {
+      script = document.createElement("script");
+      script.id = GOOGLE_SCRIPT_ID;
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+
+    script.onload = () => {
+      renderGoogleButton();
+    };
+
+    return () => {
+      cancelled = true;
+    };
+  }, [handleGoogleCredential, mode]);
 
   const handleRegister = async () => {
     if (!userId) {
@@ -64,13 +211,7 @@ const AccountAuth = () => {
       if (!response.ok) {
         throw new Error(payload.error || "Failed to create account");
       }
-
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem("soulbound_userId", payload.userId);
-        window.localStorage.setItem("soulbound_account_email", payload.email);
-      }
-
-      navigate("/lounge", { state: { userId: payload.userId } });
+      finishAuth(payload);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Account creation failed");
     } finally {
@@ -98,17 +239,7 @@ const AccountAuth = () => {
       if (!response.ok) {
         throw new Error(payload.error || "Login failed");
       }
-
-      if (!payload.hasProfile) {
-        throw new Error("This account has no saved profile. Complete onboarding first.");
-      }
-
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem("soulbound_userId", payload.userId);
-        window.localStorage.setItem("soulbound_account_email", payload.email);
-      }
-
-      navigate("/lounge", { state: { userId: payload.userId } });
+      finishAuth(payload);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Login failed");
     } finally {
@@ -207,6 +338,25 @@ const AccountAuth = () => {
               {error}
             </div>
           )}
+
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <span className="h-px flex-1 bg-border/50" />
+              <span>or continue with</span>
+              <span className="h-px flex-1 bg-border/50" />
+            </div>
+
+            {hasValidGoogleClientId ? (
+              <div className="flex justify-center">
+                <div ref={googleButtonRef} />
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground text-center">
+                Google sign-in is not configured with a valid OAuth client id.
+                Set `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
+              </p>
+            )}
+          </div>
 
           <div className="flex gap-3">
             <button

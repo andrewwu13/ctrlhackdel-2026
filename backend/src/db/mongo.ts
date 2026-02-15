@@ -36,6 +36,8 @@ const userSchema = new mongoose.Schema(
   {
     email: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
     passwordHash: { type: String },
+    googleSub: { type: String, unique: true, sparse: true },
+    authProvider: { type: String, enum: ["password", "google", "hybrid"] },
     displayName: { type: String, trim: true },
     accountCreatedAt: { type: Date },
     createdAt: { type: Date, default: Date.now },
@@ -77,6 +79,7 @@ const profileVectorSchema = new mongoose.Schema(
 
 const conversationSchema = new mongoose.Schema(
   {
+    sessionId: { type: String, required: true, unique: true, index: true },
     userAId: { type: String, required: true },
     userBId: { type: String, required: true },
     state: {

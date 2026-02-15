@@ -3,6 +3,8 @@
 export interface User {
   id: string;
   email?: string;
+  googleSub?: string;
+  authProvider?: "password" | "google" | "hybrid";
   displayName?: string;
   accountCreatedAt?: Date;
   createdAt: Date;

@@ -35,6 +35,7 @@ export class MatchOrchestrator {
   private callbacks: MatchCallbacks;
 
   constructor(
+    sessionId: string,
     profileA: ProfileVector,
     profileSummaryA: string,
     profileB: ProfileVector,
@@ -56,7 +57,7 @@ export class MatchOrchestrator {
 
     // Create session
     this.session = {
-      id: uuidv4(),
+      id: sessionId,
       userAId: profileA.userId,
       userBId: profileB.userId,
       state: ConversationState.INIT,
@@ -75,7 +76,7 @@ export class MatchOrchestrator {
 
     // Persist the conversation document to MongoDB
     await ConversationModel.create({
-      _id: this.session.id,
+      sessionId: this.session.id,
       userAId: this.session.userAId,
       userBId: this.session.userBId,
       state: this.session.state,
@@ -171,7 +172,7 @@ export class MatchOrchestrator {
     this.session.messages.push(message);
 
     // Persist message to MongoDB
-    await ConversationModel.findByIdAndUpdate(this.session.id, {
+    await ConversationModel.findOneAndUpdate({ sessionId: this.session.id }, {
       $push: {
         messages: {
           id: message.id,
@@ -208,7 +209,7 @@ export class MatchOrchestrator {
     this.session.endedAt = new Date();
 
     // Update conversation end state in MongoDB
-    await ConversationModel.findByIdAndUpdate(this.session.id, {
+    await ConversationModel.findOneAndUpdate({ sessionId: this.session.id }, {
       state: ConversationState.SCORE,
       endedAt: this.session.endedAt,
       elapsedSeconds: this.session.elapsedSeconds,
@@ -224,7 +225,7 @@ export class MatchOrchestrator {
     this.callbacks.onStateChange(state);
 
     // Fire-and-forget state update to MongoDB
-    ConversationModel.findByIdAndUpdate(this.session.id, { state }).catch(
+    ConversationModel.findOneAndUpdate({ sessionId: this.session.id }, { state }).catch(
       (err) => console.error(`[MatchOrchestrator] Failed to update state in MongoDB:`, err)
     );
   }

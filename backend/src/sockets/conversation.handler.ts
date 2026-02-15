@@ -25,6 +25,12 @@ export function registerConversationHandlers(namespace: Namespace): void {
     const userAId = socket.handshake.query.userAId as string;
     const userBId = socket.handshake.query.userBId as string;
 
+    if (!sessionId || !userAId || !userBId) {
+      socket.emit("error", { message: "Missing required conversation params" });
+      socket.disconnect();
+      return;
+    }
+
     console.log(`[Conversation] Client connected for session: ${sessionId}, users: ${userAId}, ${userBId}`);
 
     // Join a room for this session so multiple observers can watch
@@ -83,6 +89,7 @@ export function registerConversationHandlers(namespace: Namespace): void {
         };
 
         orchestrator = new MatchOrchestrator(
+          sessionId,
           profileA,
           summaryA,
           profileB,

@@ -10,6 +10,11 @@ const frontendOrigins = (
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+const googleClientIds = (process.env.GOOGLE_CLIENT_IDS || process.env.GOOGLE_CLIENT_ID || "")
+  .split(",")
+  .map((clientId) => clientId.trim())
+  .filter(Boolean);
+
 export const config = {
   port: parseInt(process.env.PORT || "4000", 10),
   frontendOrigins,
@@ -20,6 +25,8 @@ export const config = {
 
   // Google Gemini
   geminiApiKey: process.env.GEMINI_API_KEY || "",
+  googleClientIds,
+  googleClientId: googleClientIds[0] || "",
 
   // ElevenLabs
   elevenLabsApiKey: process.env.ELEVENLABS_API_KEY || "",
