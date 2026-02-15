@@ -1,0 +1,157 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* SoulBound 3.0 — Deep Plum Dark Theme (always dark) */
+    --background: 270 50% 8%;
+    --foreground: 330 20% 95%;
+
+    --card: 270 40% 12%;
+    --card-foreground: 330 20% 95%;
+
+    --popover: 270 40% 12%;
+    --popover-foreground: 330 20% 95%;
+
+    --primary: 350 78% 56%;
+    --primary-foreground: 330 20% 98%;
+
+    --secondary: 270 30% 18%;
+    --secondary-foreground: 330 20% 90%;
+
+    --muted: 270 25% 16%;
+    --muted-foreground: 270 15% 55%;
+
+    --accent: 46 100% 50%;
+    --accent-foreground: 270 50% 8%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 270 20% 20%;
+    --input: 270 20% 20%;
+    --ring: 350 78% 56%;
+
+    --radius: 0.75rem;
+
+    /* SoulBound custom tokens */
+    --plum: 270 50% 20%;
+    --plum-deep: 270 50% 8%;
+    --rose-red: 350 78% 56%;
+    --rose-glow: 350 78% 66%;
+    --gold: 46 100% 50%;
+    --gold-soft: 46 80% 65%;
+    --glass: 270 30% 95%;
+    --glass-border: 270 20% 40%;
+
+    --sidebar-background: 270 50% 10%;
+    --sidebar-foreground: 330 20% 90%;
+    --sidebar-primary: 350 78% 56%;
+    --sidebar-primary-foreground: 330 20% 98%;
+    --sidebar-accent: 270 30% 18%;
+    --sidebar-accent-foreground: 330 20% 90%;
+    --sidebar-border: 270 20% 20%;
+    --sidebar-ring: 350 78% 56%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+    overflow-x: hidden;
+  }
+}
+
+@layer utilities {
+  .glass {
+    background: hsla(var(--glass), 0.06);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid hsla(var(--glass-border), 0.15);
+  }
+
+  .glass-strong {
+    background: hsla(var(--glass), 0.1);
+    backdrop-filter: blur(40px);
+    -webkit-backdrop-filter: blur(40px);
+    border: 1px solid hsla(var(--glass-border), 0.25);
+  }
+
+  .glow-rose {
+    box-shadow: 0 0 30px -5px hsla(var(--rose-red), 0.4),
+                0 0 60px -10px hsla(var(--rose-red), 0.2);
+  }
+
+  .glow-gold {
+    box-shadow: 0 0 30px -5px hsla(var(--gold), 0.4),
+                0 0 60px -10px hsla(var(--gold), 0.2);
+  }
+
+  .text-gradient-rose {
+    background: linear-gradient(135deg, hsl(var(--rose-red)), hsl(var(--rose-glow)));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .text-gradient-gold {
+    background: linear-gradient(135deg, hsl(var(--gold)), hsl(var(--gold-soft)));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .lego-stud {
+    position: relative;
+  }
+  .lego-stud::after {
+    content: '';
+    position: absolute;
+    top: 4px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: hsla(var(--glass), 0.1);
+    border: 1px solid hsla(var(--glass-border), 0.2);
+  }
+}
+
+/* Liquid Silk animation */
+@keyframes liquid-silk {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  25% {
+    background-position: 100% 50%;
+  }
+  50% {
+    background-position: 100% 100%;
+  }
+  75% {
+    background-position: 0% 100%;
+  }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-20px); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+@keyframes typewriter-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
