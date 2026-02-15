@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { config } from "../config";
 import type { UserProfile, ProfileVector, PersonalityVector } from "../models/user";
+import { UserProfileModel, ProfileVectorModel } from "../db/mongo";
 
 // ── Profile Builder ────────────────────────────────────────────────
 
@@ -12,14 +13,14 @@ export class ProfileBuilder {
   }
 
   /**
-   * Build a complete ProfileVector from onboarding data.
+   * Build a complete ProfileVector from onboarding data and persist to MongoDB.
    */
   async buildProfileVector(profile: UserProfile): Promise<ProfileVector> {
     const embedding = await this.generateEmbedding(profile);
     const personality = await this.extractPersonalityTraits(profile);
     const { hardFilters, softFilters } = this.extractFilters(profile);
 
-    return {
+    const profileVector: ProfileVector = {
       userId: profile.userId,
       embedding,
       personality,
@@ -27,6 +28,59 @@ export class ProfileBuilder {
       softFilters,
       createdAt: new Date(),
       updatedAt: new Date(),
+    };
+
+    // Persist UserProfile to MongoDB (upsert by userId)
+    await UserProfileModel.findOneAndUpdate(
+      { userId: profile.userId },
+      {
+        values: profile.values,
+        boundaries: profile.boundaries,
+        lifestyle: profile.lifestyle,
+        interests: profile.interests,
+        hobbies: profile.hobbies,
+        freeformPreferences: profile.freeformPreferences,
+        speechStyleMarkers: profile.speechStyleMarkers || [],
+      },
+      { upsert: true, new: true }
+    );
+    console.log(`[ProfileBuilder] Saved UserProfile for ${profile.userId}`);
+
+    // Persist ProfileVector to MongoDB (upsert by userId)
+    await ProfileVectorModel.findOneAndUpdate(
+      { userId: profile.userId },
+      {
+        embedding: profileVector.embedding,
+        personality: profileVector.personality,
+        hardFilters: profileVector.hardFilters,
+        softFilters: profileVector.softFilters,
+      },
+      { upsert: true, new: true }
+    );
+    console.log(`[ProfileBuilder] Saved ProfileVector for ${profile.userId}`);
+
+    return profileVector;
+  }
+
+  /**
+   * Fetch a stored ProfileVector from MongoDB.
+   */
+  static async getProfileVector(userId: string): Promise<ProfileVector | null> {
+    const doc = await ProfileVectorModel.findOne({ userId }).lean();
+    if (!doc) return null;
+
+    return {
+      userId: doc.userId,
+      embedding: doc.embedding as number[],
+      personality: doc.personality as PersonalityVector,
+      hardFilters: doc.hardFilters instanceof Map
+        ? Object.fromEntries(doc.hardFilters)
+        : (doc.hardFilters as unknown as Record<string, string | boolean>) ?? {},
+      softFilters: doc.softFilters instanceof Map
+        ? Object.fromEntries(doc.softFilters)
+        : (doc.softFilters as unknown as Record<string, number>) ?? {},
+      createdAt: doc.createdAt!,
+      updatedAt: doc.updatedAt!,
     };
   }
 

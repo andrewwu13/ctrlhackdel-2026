@@ -5,6 +5,7 @@ import type { ConversationSession, Message } from "../models/conversation";
 import { ConversationState } from "../models/conversation";
 import type { ProfileVector } from "../models/user";
 import type { CompatibilityResult } from "../models/compatibility";
+import { ConversationModel } from "../db/mongo";
 
 // ── Constants ──────────────────────────────────────────────────────
 
@@ -68,6 +69,17 @@ export class MatchOrchestrator {
   async start(): Promise<void> {
     // ── INIT state ──────────────────────────────────────────────
     this.transitionTo(ConversationState.INIT);
+
+    // Persist the conversation document to MongoDB
+    await ConversationModel.create({
+      _id: this.session.id,
+      userAId: this.session.userAId,
+      userBId: this.session.userBId,
+      state: this.session.state,
+      messages: [],
+      startedAt: this.session.startedAt,
+    });
+    console.log(`[MatchOrchestrator] Created conversation ${this.session.id} in MongoDB`);
 
     // Compute pre-conversation score
     this.scoringEngine.computePreConversationScore();
@@ -151,6 +163,21 @@ export class MatchOrchestrator {
     this.agentB.addToHistory(message);
     this.session.messages.push(message);
 
+    // Persist message to MongoDB
+    await ConversationModel.findByIdAndUpdate(this.session.id, {
+      $push: {
+        messages: {
+          id: message.id,
+          sender: message.sender,
+          content: message.content,
+          timestamp: message.timestamp,
+          sentiment: message.sentiment,
+          topicEmbedding: message.topicEmbedding,
+          tokenCount: message.tokenCount,
+        },
+      },
+    });
+
     // Emit message
     this.callbacks.onAgentMessage(message);
 
@@ -165,7 +192,7 @@ export class MatchOrchestrator {
   /**
    * End the conversation and produce final results.
    */
-  private end(): void {
+  private async end(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
     if (this.turnTimer) clearInterval(this.turnTimer);
 
@@ -173,13 +200,26 @@ export class MatchOrchestrator {
 
     this.session.endedAt = new Date();
 
-    const finalResult = this.scoringEngine.computeFinalResult(this.session.id);
+    // Update conversation end state in MongoDB
+    await ConversationModel.findByIdAndUpdate(this.session.id, {
+      state: ConversationState.SCORE,
+      endedAt: this.session.endedAt,
+      elapsedSeconds: this.session.elapsedSeconds,
+    });
+    console.log(`[MatchOrchestrator] Conversation ${this.session.id} ended, saved to MongoDB`);
+
+    const finalResult = await this.scoringEngine.computeFinalResult(this.session.id);
     this.callbacks.onConversationEnd(finalResult);
   }
 
   private transitionTo(state: ConversationState): void {
     this.session.state = state;
     this.callbacks.onStateChange(state);
+
+    // Fire-and-forget state update to MongoDB
+    ConversationModel.findByIdAndUpdate(this.session.id, { state }).catch(
+      (err) => console.error(`[MatchOrchestrator] Failed to update state in MongoDB:`, err)
+    );
   }
 
   getSession(): ConversationSession {
