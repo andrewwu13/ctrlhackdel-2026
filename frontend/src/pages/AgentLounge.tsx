@@ -87,6 +87,7 @@ type LoungeConversation = {
   sessionId: string;
   label: string;
   peerLabel: string;
+  peerUserId: string;
   peerAvatarSeed: number;
   state: ConversationState;
   messages: ChatMessage[];
@@ -105,7 +106,7 @@ type LoungeConversation = {
   scheduleError: string;
 };
 
-const TOTAL_DURATION_SECONDS = 180;
+const TOTAL_DURATION_SECONDS = 60;
 const MAX_SERIES_POINTS = 90;
 const MATCH_THRESHOLD = 65;
 
@@ -463,6 +464,7 @@ const AgentLounge = () => {
         sessionId,
         label,
         peerLabel: peerName,
+        peerUserId: matchUserId,
         peerAvatarSeed: matchUserId === "demo-agent" ? persona.avatarSeed : hashSeed(matchUserId),
         state: "INIT",
         messages: [],
@@ -619,6 +621,142 @@ const AgentLounge = () => {
     void loadCandidates();
   }, [userId, isLoadingProfile, loadCandidates]);
 
+
+ 
+  // Reconnect sockets for any active/init conversations on mount
+  useEffect(() => {
+    if (!userId) return;
+ 
+    conversations.forEach((conversation) => {
+      // If we're in a state that needs a socket, and we don't have one, reconnect
+      if (
+        (conversation.state === "INIT" ||
+          conversation.state === "LIVE" ||
+          conversation.state === "WRAP") &&
+        !socketsRef.current[conversation.sessionId] &&
+        conversation.peerUserId // Only if we have the peer ID (legacy sessions might lack it)
+      ) {
+        // Re-establish connection
+        const socket = io(`${backendUrl}/conversation`, {
+          query: {
+            sessionId: conversation.sessionId,
+            userAId: userId,
+            userBId: conversation.peerUserId,
+          },
+        });
+ 
+        socketsRef.current[conversation.sessionId] = socket;
+ 
+        // Re-attach all event listeners
+        socket.on(
+          "agent_status_update",
+          (status: {
+            userAId: string;
+            userAReady: boolean;
+            userBId: string;
+            userBReady: boolean;
+          }) => {
+            updateConversation(conversation.sessionId, (c) => {
+              const amUserA = status.userAId === userId;
+              return {
+                ...c,
+                myAgentActive: amUserA ? status.userAReady : status.userBReady,
+                peerAgentReady: amUserA ? status.userBReady : status.userAReady,
+              };
+            });
+          },
+        );
+ 
+        socket.on("agent_message", (message: ChatMessage) => {
+          updateConversation(conversation.sessionId, (c) => ({
+            ...c,
+            messages: [...c.messages, message],
+            unread:
+              activeConversationIdRef.current === conversation.sessionId
+                ? c.unread
+                : c.unread + 1,
+            state: "LIVE", // Ensure state is live if we get messages
+          }));
+        });
+ 
+        socket.on(
+          "compatibility_update",
+          (scoreUpdate: { score: number; breakdown: ScoreBreakdown }) => {
+            const score = toPercent(scoreUpdate.score);
+            updateConversation(conversation.sessionId, (c) => ({
+              ...c,
+              score,
+              scoreSeries: appendScore(c.scoreSeries, score),
+              breakdown: {
+                preConversation: toPercent(scoreUpdate.breakdown?.preConversation),
+                personality: toPercent(scoreUpdate.breakdown?.personality),
+                flow: toPercent(scoreUpdate.breakdown?.flow),
+                topic: toPercent(scoreUpdate.breakdown?.topic),
+              },
+            }));
+          },
+        );
+ 
+        socket.on("state_change", (event: { state: ConversationState }) => {
+          updateConversation(conversation.sessionId, (c) => ({
+            ...c,
+            state: event.state,
+          }));
+        });
+ 
+        socket.on("timer_tick", (event: { elapsedSeconds: number }) => {
+          updateConversation(conversation.sessionId, (c) => ({
+            ...c,
+            elapsed: event.elapsedSeconds,
+          }));
+        });
+ 
+        socket.on("conversation_end", (event: ConversationResult) => {
+          updateConversation(conversation.sessionId, (c) => ({
+            ...c,
+            state: "SCORE",
+            result: event,
+            score: toPercent(event.compatibilityScore),
+            scoreSeries:
+              event.trendOverTime && event.trendOverTime.length > 0
+                ? event.trendOverTime.map((point) => toPercent(point))
+                : c.scoreSeries,
+            breakdown: {
+              preConversation: toPercent(event.breakdown.preConversation),
+              personality: toPercent(event.breakdown.personality),
+              flow: toPercent(event.breakdown.flow),
+              topic: toPercent(event.breakdown.topic),
+            },
+            dateSuggestion:
+              toPercent(event.compatibilityScore) > MATCH_THRESHOLD
+                ? generateDateSuggestion(conversation.sessionId)
+                : null,
+          }));
+        });
+ 
+        socket.on("error", (event: { message: string }) => {
+          updateConversation(conversation.sessionId, (c) => ({
+            ...c,
+            connecting: false,
+            error: event.message,
+          }));
+        });
+ 
+        socket.on("connect_error", () => {
+          // If we fail to reconnect (e.g. backend restarted), mark as SCORE
+          /* updateConversation(conversation.sessionId, (c) => ({
+             ...c,
+             connecting: false,
+             error: "Connection lost",
+             state: "SCORE"
+           })); */
+          // Actually, let's just leave it, maybe typical network blip
+        });
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, backendUrl]); // Run once when userId is available (Conversations are initial state)
+ 
   useEffect(() => {
     return () => {
       Object.values(socketsRef.current).forEach((socket) => {
@@ -793,13 +931,13 @@ const AgentLounge = () => {
             </div>
           )}
 
-          <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[290px_minmax(0,1fr)_330px]">
-            <aside className="glass-strong min-h-[250px] rounded-2xl p-3">
+          <div className="flex min-h-0 flex-1 flex-col gap-4 lg:grid lg:grid-cols-[290px_minmax(0,1fr)_330px]">
+            <aside className="glass-strong flex flex-col rounded-2xl p-3 max-h-[calc(100vh-180px)]">
               <p className="px-2 pb-2 font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
                 Conversations
               </p>
 
-              <div className="flex max-h-[65vh] flex-col gap-2 overflow-y-auto pr-1">
+              <div className="flex flex-1 flex-col gap-2 overflow-y-auto pr-1">
                 {conversations.length === 0 && (
                   <div className="flex flex-col items-center justify-center py-8 text-center">
                     <p className="text-sm text-muted-foreground">
@@ -859,14 +997,21 @@ const AgentLounge = () => {
               </div>
             </aside>
 
-            <section className="glass-strong min-h-[420px] overflow-hidden rounded-2xl flex flex-col">
+            <section className="glass-strong flex flex-col overflow-hidden rounded-2xl max-h-[calc(100vh-180px)]">
               {!activeConversation ? (
-                <div className="flex flex-1 items-center justify-center p-6 text-center">
-                  <div className="space-y-3">
-                    <AgentAvatar mode="idle" />
-                    <p className="text-sm text-muted-foreground">
-                      Choose a conversation from the left.
-                    </p>
+                <div className="flex flex-1 flex-col items-center justify-center p-6 text-center opacity-70">
+                  <div className="space-y-4">
+                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-primary/10 border border-primary/20">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="none" viewBox="0 0 24 24" className="text-primary/80">
+                        <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 0 1-4.255-.949L3 19.5l1.85-2.518A10.02 10.02 0 0 1 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8Z"/>
+                      </svg>
+                    </div>
+                    <div className="space-y-1">
+                      <h3 className="text-lg font-semibold text-foreground">Ready to connect?</h3>
+                      <p className="text-sm text-muted-foreground/80">
+                        Select a match from the left to start watching them chat.
+                      </p>
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -971,7 +1116,7 @@ const AgentLounge = () => {
               )}
             </section>
 
-            <aside className="glass-strong min-h-[320px] rounded-2xl p-4 space-y-4">
+            <aside className="glass-strong overflow-y-auto rounded-2xl p-4 space-y-4 max-h-[calc(100vh-180px)]">
               {activeConversation ? (
                 <>
                   <div className="space-y-1">
