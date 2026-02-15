@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useRouter, useSearchParams } from "next/navigation";
 import LiquidSilkBg from "@/components/LiquidSilkBg";
 import { fetchBackend } from "@/lib/config";
 
@@ -50,16 +50,16 @@ declare global {
 }
 
 const AccountAuth = () => {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const locationUserId = (location.state as { userId?: string } | null)?.userId || null;
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const queryUserId = searchParams?.get("userId") || null;
   const googleButtonRef = useRef<HTMLDivElement | null>(null);
 
   const userId = useMemo(() => {
-    if (locationUserId) return locationUserId;
+    if (queryUserId) return queryUserId;
     if (typeof window === "undefined") return null;
     return window.localStorage.getItem("soulbound_userId");
-  }, [locationUserId]);
+  }, [queryUserId]);
 
   const [mode, setMode] = useState<AuthMode>("register");
   const [displayName, setDisplayName] = useState("");
@@ -80,9 +80,9 @@ const AccountAuth = () => {
           window.localStorage.setItem("soulbound_account_email", payload.email);
         }
       }
-      navigate("/lounge", { state: { userId: payload.userId } });
+      router.push(`/lounge?userId=${encodeURIComponent(payload.userId)}`);
     },
-    [navigate],
+    [router],
   );
 
   const handleGoogleCredential = useCallback(
@@ -361,7 +361,7 @@ const AccountAuth = () => {
           <div className="flex gap-3">
             <button
               type="button"
-              onClick={() => navigate("/onboarding")}
+              onClick={() => router.push("/onboarding")}
               className="flex-1 rounded-xl border border-border px-4 py-3 text-sm hover:bg-muted/30 transition"
             >
               Back to Profile

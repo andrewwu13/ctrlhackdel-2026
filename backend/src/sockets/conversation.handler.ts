@@ -23,7 +23,6 @@ export function registerConversationHandlers(namespace: Namespace): void {
       return;
     }
 
-    console.log(`[Conversation] Client connected for session: ${sessionId}, users: ${userAId}, ${userBId}`);
     console.log(
       `[Conversation] Client connected for session: ${sessionId}, users: ${userAId}, ${userBId}`
     );
@@ -158,9 +157,8 @@ export function registerConversationHandlers(namespace: Namespace): void {
           },
         };
 
-        orchestrator = new MatchOrchestrator(
-          sessionId,
         const orchestrator = new MatchOrchestrator(
+          sId,
           profileA,
           summaryA,
           profileB,
@@ -185,4 +183,3 @@ export function registerConversationHandlers(namespace: Namespace): void {
     });
   });
 }
-

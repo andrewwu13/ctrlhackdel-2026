@@ -110,10 +110,27 @@ const Onboarding = () => {
   );
 
   const handleLaunch = useCallback(async () => {
-    const storedUserId = localStorage.getItem("soulbound_userId");
-    const uid = storedUserId || userId;
-    router.push(`/lounge${uid ? `?userId=${uid}` : ""}`);
-  }, [router, userId]);
+    setLaunchError("");
+    setIsSavingProfile(true);
+
+    try {
+      const storedUserId = localStorage.getItem("soulbound_userId");
+      const uid = storedUserId || userId;
+
+      if (!uid) {
+        throw new Error("Missing profile id. Please regenerate your profile.");
+      }
+
+      await saveProfileToBackend(uid, flow.profile, flow.personality);
+      router.push(`/account?userId=${encodeURIComponent(uid)}`);
+    } catch (error) {
+      setLaunchError(
+        error instanceof Error ? error.message : "Unable to save profile right now.",
+      );
+    } finally {
+      setIsSavingProfile(false);
+    }
+  }, [flow.personality, flow.profile, router, userId]);
 
   return (
     <div className="relative min-h-screen overflow-hidden">
