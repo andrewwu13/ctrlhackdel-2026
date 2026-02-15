@@ -117,6 +117,7 @@ export function useConversationFlow(
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const silenceTimerRef = useRef<number | null>(null);
   const pendingTranscriptRef = useRef("");
+  const lastTranscriptRef = useRef("");
   const messagesRef = useRef<ConversationMessage[]>([]);
   const flowTokenRef = useRef(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -278,6 +279,7 @@ export function useConversationFlow(
       if (!isTokenActive(token)) return;
       stopListening();
       pendingTranscriptRef.current = "";
+      lastTranscriptRef.current = "";
       setLiveTranscript("");
 
       if (!speechRecognitionCtor) {
@@ -352,6 +354,14 @@ export function useConversationFlow(
       beginListening(token);
       return;
     }
+
+    if (transcript === lastTranscriptRef.current) {
+      log("Duplicate transcript, resuming listening", { text: transcript });
+      beginListening(token);
+      return;
+    }
+
+    lastTranscriptRef.current = transcript;
 
     // Log the STT transcript
     log("STT transcript captured", {
