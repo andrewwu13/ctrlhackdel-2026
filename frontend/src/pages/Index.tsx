@@ -1,10 +1,18 @@
 import { motion } from "framer-motion";
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import LiquidSilkBg from "@/components/LiquidSilkBg";
 import LegoRose from "@/components/LegoRose";
 
 const Index = () => {
   const router = useRouter();
+  const existingUserId = useMemo(
+    () =>
+      typeof window !== "undefined"
+        ? window.localStorage.getItem("soulbound_userId")
+        : null,
+    [],
+  );
 
   return (
     <div className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden">
@@ -51,8 +59,8 @@ const Index = () => {
           transition={{ delay: 0.6, duration: 0.8 }}
         >
           <h1 className="font-display text-6xl md:text-8xl font-black tracking-tight">
-            <span className="text-gradient-rose">Soul</span>
-            <span className="text-foreground">Bound</span>
+            <span className="text-gradient-rose">AL-</span>
+            <span className="text-foreground">MER</span>
           </h1>
           <motion.p
             className="text-muted-foreground text-lg md:text-xl max-w-md mx-auto font-light"
@@ -66,18 +74,35 @@ const Index = () => {
           </motion.p>
         </motion.div>
 
-        {/* CTA Button */}
-        <motion.button
-          onClick={() => router.push("/onboarding")}
-          className="glass glow-rose px-10 py-4 rounded-2xl font-display font-semibold text-lg text-primary-foreground bg-primary/80 hover:bg-primary transition-all duration-300 cursor-pointer"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 1.4, duration: 0.6 }}
-          whileHover={{ scale: 1.05, boxShadow: "0 0 40px -5px hsla(350, 78%, 56%, 0.6)" }}
-          whileTap={{ scale: 0.98 }}
-        >
-          Begin Soul-Sync
-        </motion.button>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <motion.button
+            onClick={() => router.push("/onboarding")}
+            className="glass glow-rose px-10 py-4 rounded-2xl font-display font-semibold text-lg text-primary-foreground bg-primary/80 hover:bg-primary transition-all duration-300 cursor-pointer"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 1.4, duration: 0.6 }}
+            whileHover={{ scale: 1.05, boxShadow: "0 0 40px -5px hsla(350, 78%, 56%, 0.6)" }}
+            whileTap={{ scale: 0.98 }}
+          >
+            Begin Soul-Sync
+          </motion.button>
+
+          <motion.button
+            onClick={() =>
+              router.push(
+                existingUserId
+                  ? `/lounge?userId=${encodeURIComponent(existingUserId)}`
+                  : "/account?mode=login",
+              )
+            }
+            className="px-8 py-4 rounded-2xl font-display font-semibold text-lg text-foreground border border-border bg-black/20 hover:bg-black/35 transition-all duration-300 cursor-pointer"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 1.5, duration: 0.6 }}
+          >
+            {existingUserId ? "Go to Lounge" : "Sign In"}
+          </motion.button>
+        </div>
 
         {/* Subtitle */}
         <motion.p

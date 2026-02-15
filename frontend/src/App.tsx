@@ -5,6 +5,7 @@ import Index from "./pages/Index";
 import Onboarding from "./pages/Onboarding";
 import AgentLounge from "./pages/AgentLounge";
 import AccountAuth from "./pages/AccountAuth";
+import ProfilePage from "./pages/Profile";
 
 const App = () => (
   <TooltipProvider>
@@ -15,6 +16,7 @@ const App = () => (
         <Route path="/onboarding" element={<Onboarding />} />
         <Route path="/account" element={<AccountAuth />} />
         <Route path="/lounge" element={<AgentLounge />} />
+        <Route path="/profile" element={<ProfilePage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

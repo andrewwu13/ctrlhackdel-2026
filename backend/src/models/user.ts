@@ -26,9 +26,20 @@ export interface UserProfile {
 
   // Speech style markers (extracted from ElevenLabs STT)
   speechStyleMarkers?: string[];
+  upcomingDates?: UpcomingDate[];
 
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface UpcomingDate {
+  id: string;
+  sessionId?: string;
+  withName: string;
+  scheduledAt: Date;
+  place: string;
+  status: "scheduled" | "declined";
+  createdAt: Date;
 }
 
 export interface PersonalityVector {

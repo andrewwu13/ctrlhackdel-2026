@@ -56,6 +56,21 @@ const userProfileSchema = new mongoose.Schema(
     hobbies: [String],
     freeformPreferences: { type: Map, of: String },
     speechStyleMarkers: [String],
+    upcomingDates: [
+      {
+        id: { type: String, required: true },
+        sessionId: { type: String },
+        withName: { type: String, required: true },
+        scheduledAt: { type: Date, required: true },
+        place: { type: String, required: true },
+        status: {
+          type: String,
+          enum: ["scheduled", "declined"],
+          default: "scheduled",
+        },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   { timestamps: true }
 );

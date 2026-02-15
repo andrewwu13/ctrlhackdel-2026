@@ -53,6 +53,7 @@ const AccountAuth = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryUserId = searchParams?.get("userId") || null;
+  const modeParam = searchParams?.get("mode");
   const googleButtonRef = useRef<HTMLDivElement | null>(null);
 
   const userId = useMemo(() => {
@@ -68,6 +69,14 @@ const AccountAuth = () => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (modeParam === "login" || modeParam === "register") {
+      setMode(modeParam);
+    } else if (!queryUserId) {
+      setMode("login");
+    }
+  }, [modeParam, queryUserId]);
 
   const finishAuth = useCallback(
     (payload: { userId: string; email?: string; hasProfile?: boolean }) => {

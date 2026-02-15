@@ -1,8 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { Router, Request, Response } from "express";
 import { generateWithRetry } from "../services/gemini-client";
 import { ProfileBuilder } from "../services/profile-builder";
-import { UserModel, ProfileVectorModel } from "../db/mongo";
-import type { UserProfile } from "../models/user";
+import { UserModel, UserProfileModel, ProfileVectorModel } from "../db/mongo";
+import type { UserProfile, UpcomingDate } from "../models/user";
 
 const router = Router();
 const profileBuilder = new ProfileBuilder();
@@ -27,6 +28,194 @@ type PersonalityPayload = {
   emotionalStability: number;
 };
 
+type EditableProfileDetails = {
+  name?: string;
+  headline?: string;
+  bio?: string;
+  communicationStyle?: string;
+  avatarUrl?: string;
+  values?: string[];
+  boundaries?: string[];
+  lifestyle?: string[];
+  interests?: string[];
+  hobbies?: string[];
+};
+
+type EditableAccountDetails = {
+  displayName?: string;
+};
+
+type MatchGender = "female" | "male" | "any";
+
+const FEMALE_AGENT_NAMES = ["Ava", "Mia", "Sofia", "Luna", "Nora", "Zara"];
+const MALE_AGENT_NAMES = ["Ethan", "Noah", "Liam", "Milo", "Arjun", "Kai"];
+
+const mapFromFreeform = (value: unknown): Record<string, string> => {
+  if (value instanceof Map) {
+    return Object.fromEntries(value.entries()) as Record<string, string>;
+  }
+  if (value && typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>).reduce<Record<string, string>>(
+      (acc, [key, entry]) => {
+        if (typeof entry === "string") acc[key] = entry;
+        return acc;
+      },
+      {},
+    );
+  }
+  return {};
+};
+
+const normalizeUpcomingDates = (value: unknown): UpcomingDate[] => {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((entry) => {
+      const dateEntry = entry as Partial<UpcomingDate>;
+      const scheduledAt = new Date(String(dateEntry.scheduledAt ?? ""));
+      const createdAt = new Date(String(dateEntry.createdAt ?? ""));
+
+      if (!dateEntry.id || !dateEntry.withName || !dateEntry.place || Number.isNaN(scheduledAt.getTime())) {
+        return null;
+      }
+
+      return {
+        id: dateEntry.id,
+        sessionId: dateEntry.sessionId,
+        withName: dateEntry.withName,
+        place: dateEntry.place,
+        scheduledAt,
+        status: dateEntry.status === "declined" ? "declined" : "scheduled",
+        createdAt: Number.isNaN(createdAt.getTime()) ? new Date() : createdAt,
+      } as UpcomingDate;
+    })
+    .filter((entry): entry is UpcomingDate => entry !== null)
+    .sort((a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime());
+};
+
+const inferPreferredMatchGender = (profile: {
+  values?: string[];
+  boundaries?: string[];
+  lifestyle?: string[];
+  interests?: string[];
+  hobbies?: string[];
+  freeformPreferences?: Record<string, string>;
+}): MatchGender => {
+  const combinedText = [
+    ...(profile.values || []),
+    ...(profile.boundaries || []),
+    ...(profile.lifestyle || []),
+    ...(profile.interests || []),
+    ...(profile.hobbies || []),
+    ...Object.values(profile.freeformPreferences || {}),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  const includes = (terms: string[]) => terms.some((term) => combinedText.includes(term));
+
+  if (includes(["looking for men", "looking for a man", "boyfriend", "husband", "he/him", "male partner"])) {
+    return "male";
+  }
+
+  if (includes(["looking for women", "looking for a woman", "girlfriend", "wife", "she/her", "female partner"])) {
+    return "female";
+  }
+
+  if (includes(["he/him"])) return "female";
+  if (includes(["she/her"])) return "male";
+
+  return "any";
+};
+
+const getDeterministicPersona = (userId: string, preferredMatchGender: MatchGender) => {
+  const combinedList = [...FEMALE_AGENT_NAMES, ...MALE_AGENT_NAMES];
+  const sourceList =
+    preferredMatchGender === "female"
+      ? FEMALE_AGENT_NAMES
+      : preferredMatchGender === "male"
+        ? MALE_AGENT_NAMES
+        : combinedList;
+
+  const seed = [...userId].reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const name = sourceList[seed % sourceList.length];
+  const gender = FEMALE_AGENT_NAMES.includes(name) ? "female" : "male";
+
+  return {
+    id: "demo-agent",
+    name,
+    gender,
+    avatarSeed: (seed * 13) % 97,
+  };
+};
+
+const normalizeStringArray = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item ?? "").trim())
+      .filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+};
+
+const buildProfileSnapshot = async (userId: string) => {
+  const [user, userProfileDoc] = await Promise.all([
+    UserModel.findById(userId).lean(),
+    UserProfileModel.findOne({ userId }).lean(),
+  ]);
+
+  if (!user || !userProfileDoc) return null;
+
+  const freeformPreferences = mapFromFreeform(userProfileDoc.freeformPreferences);
+  const upcomingDates = normalizeUpcomingDates(
+    (userProfileDoc as { upcomingDates?: unknown }).upcomingDates,
+  );
+  const preferredGender = inferPreferredMatchGender({
+    values: userProfileDoc.values as string[] | undefined,
+    boundaries: userProfileDoc.boundaries as string[] | undefined,
+    lifestyle: userProfileDoc.lifestyle as string[] | undefined,
+    interests: userProfileDoc.interests as string[] | undefined,
+    hobbies: userProfileDoc.hobbies as string[] | undefined,
+    freeformPreferences,
+  });
+  const suggestedMatchPersona = getDeterministicPersona(userId, preferredGender);
+
+  const displayName =
+    (typeof user.displayName === "string" && user.displayName.trim()) ||
+    freeformPreferences.name ||
+    "SoulBound User";
+
+  return {
+    userId,
+    account: {
+      displayName,
+      email: user.email || null,
+      authProvider: user.authProvider || null,
+      avatarUrl: freeformPreferences.avatarUrl || null,
+    },
+    profile: {
+      name: freeformPreferences.name || displayName,
+      headline: freeformPreferences.headline || "",
+      bio: freeformPreferences.bio || "",
+      communicationStyle: freeformPreferences.communicationStyle || "",
+      avatarUrl: freeformPreferences.avatarUrl || "",
+      values: (userProfileDoc.values as string[] | undefined) || [],
+      boundaries: (userProfileDoc.boundaries as string[] | undefined) || [],
+      lifestyle: (userProfileDoc.lifestyle as string[] | undefined) || [],
+      interests: (userProfileDoc.interests as string[] | undefined) || [],
+      hobbies: (userProfileDoc.hobbies as string[] | undefined) || [],
+      upcomingDates,
+    },
+    suggestedMatchPersona,
+  };
+};
+
 /**
  * POST /api/profile/generate
  * Accepts interview answers, generates a profile via Gemini, and persists to MongoDB.
@@ -41,7 +230,6 @@ router.post("/generate", async (req: Request, res: Response) => {
       return;
     }
 
-    // ── Generate profile JSON via Gemini ─────────────────────────
     const prompt = `You are generating a user profile for an autonomous personal agent.
 Return valid JSON only with this exact schema:
 {
@@ -81,7 +269,10 @@ Interview answers:\n${answers.map((a, i) => `${i + 1}. ${a}`).join("\n")}`;
         dealbreakers: (parsed.dealbreakers || []).filter(Boolean),
       };
     } catch (geminiError) {
-      console.error("[Profile] Gemini generation failed after retries, using fallback:", geminiError instanceof Error ? geminiError.message : geminiError);
+      console.error(
+        "[Profile] Gemini generation failed after retries, using fallback:",
+        geminiError instanceof Error ? geminiError.message : geminiError,
+      );
       const combined = answers.join(" ").trim();
       generatedProfile = {
         name: "User",
@@ -94,7 +285,6 @@ Interview answers:\n${answers.map((a, i) => `${i + 1}. ${a}`).join("\n")}`;
       };
     }
 
-    // ── Create User + Profile in MongoDB ─────────────────────────
     const user = await UserModel.create({});
     const userId = user._id.toString();
 
@@ -106,17 +296,21 @@ Interview answers:\n${answers.map((a, i) => `${i + 1}. ${a}`).join("\n")}`;
       interests: generatedProfile.goals,
       hobbies: [],
       freeformPreferences: {
+        name: generatedProfile.name,
         bio: generatedProfile.bio,
         headline: generatedProfile.headline,
         communicationStyle: generatedProfile.communicationStyle,
       },
+      upcomingDates: [],
       createdAt: new Date(),
       updatedAt: new Date(),
     };
 
     const profileVector = await profileBuilder.buildProfileVector(userProfile);
 
-    console.log(`[Profile] Generated profile for user ${userId}, embedding dim: ${profileVector.embedding.length}`);
+    console.log(
+      `[Profile] Generated profile for user ${userId}, embedding dim: ${profileVector.embedding.length}`,
+    );
 
     res.json({
       userId,
@@ -201,6 +395,190 @@ router.post("/save", async (req: Request, res: Response) => {
   } catch (error) {
     console.error("[Profile] Save error:", error);
     res.status(500).json({ error: "Failed to save profile" });
+  }
+});
+
+/**
+ * GET /api/profile/me?userId=<id>
+ * Returns account + profile details for rendering the profile and lounge headers.
+ */
+router.get("/me", async (req: Request, res: Response) => {
+  try {
+    const userId = String(req.query.userId || "").trim();
+
+    if (!userId) {
+      res.status(400).json({ error: "userId query param is required" });
+      return;
+    }
+
+    const snapshot = await buildProfileSnapshot(userId);
+    if (!snapshot) {
+      res.status(404).json({ error: "User or profile not found" });
+      return;
+    }
+
+    res.json(snapshot);
+  } catch (error) {
+    console.error("[Profile] Fetch error:", error);
+    res.status(500).json({ error: "Failed to fetch profile" });
+  }
+});
+
+/**
+ * PATCH /api/profile/me
+ * Updates account/profile fields including avatar URL and list preferences.
+ */
+router.patch("/me", async (req: Request, res: Response) => {
+  try {
+    const { userId, account, profile } = req.body as {
+      userId?: string;
+      account?: EditableAccountDetails;
+      profile?: EditableProfileDetails;
+    };
+
+    if (!userId) {
+      res.status(400).json({ error: "userId is required" });
+      return;
+    }
+
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    const existingProfileDoc = await UserProfileModel.findOne({ userId }).lean();
+    const existingFreeform = mapFromFreeform(existingProfileDoc?.freeformPreferences);
+
+    const mergedFreeform: Record<string, string> = {
+      ...existingFreeform,
+    };
+
+    if (profile?.name !== undefined) mergedFreeform.name = profile.name.trim();
+    if (profile?.headline !== undefined) mergedFreeform.headline = profile.headline.trim();
+    if (profile?.bio !== undefined) mergedFreeform.bio = profile.bio.trim();
+    if (profile?.communicationStyle !== undefined) {
+      mergedFreeform.communicationStyle = profile.communicationStyle.trim();
+    }
+    if (profile?.avatarUrl !== undefined) mergedFreeform.avatarUrl = profile.avatarUrl.trim();
+
+    const values =
+      profile?.values !== undefined
+        ? normalizeStringArray(profile.values)
+        : normalizeStringArray(existingProfileDoc?.values);
+    const boundaries =
+      profile?.boundaries !== undefined
+        ? normalizeStringArray(profile.boundaries)
+        : normalizeStringArray(existingProfileDoc?.boundaries);
+    const lifestyle =
+      profile?.lifestyle !== undefined
+        ? normalizeStringArray(profile.lifestyle)
+        : normalizeStringArray(existingProfileDoc?.lifestyle);
+    const interests =
+      profile?.interests !== undefined
+        ? normalizeStringArray(profile.interests)
+        : normalizeStringArray(existingProfileDoc?.interests);
+    const hobbies =
+      profile?.hobbies !== undefined
+        ? normalizeStringArray(profile.hobbies)
+        : normalizeStringArray(existingProfileDoc?.hobbies);
+
+    const mergedProfile: UserProfile = {
+      userId,
+      values,
+      boundaries,
+      lifestyle,
+      interests,
+      hobbies,
+      freeformPreferences: mergedFreeform,
+      speechStyleMarkers:
+        (existingProfileDoc?.speechStyleMarkers as string[] | undefined) || [],
+      upcomingDates: normalizeUpcomingDates(
+        (existingProfileDoc as { upcomingDates?: unknown } | null)?.upcomingDates,
+      ),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    await profileBuilder.buildProfileVector(mergedProfile);
+
+    const nextDisplayName =
+      (account?.displayName && account.displayName.trim()) ||
+      mergedFreeform.name ||
+      user.displayName ||
+      "SoulBound User";
+    user.displayName = nextDisplayName;
+    await user.save();
+
+    const snapshot = await buildProfileSnapshot(userId);
+    if (!snapshot) {
+      res.status(404).json({ error: "Profile not found after update" });
+      return;
+    }
+
+    res.json({ saved: true, ...snapshot });
+  } catch (error) {
+    console.error("[Profile] Update error:", error);
+    res.status(500).json({ error: "Failed to update profile" });
+  }
+});
+
+/**
+ * POST /api/profile/upcoming-date
+ * Saves an accepted match date to the user's profile.
+ */
+router.post("/upcoming-date", async (req: Request, res: Response) => {
+  try {
+    const { userId, sessionId, withName, scheduledAt, place } = req.body as {
+      userId?: string;
+      sessionId?: string;
+      withName?: string;
+      scheduledAt?: string;
+      place?: string;
+    };
+
+    if (!userId || !withName || !scheduledAt || !place) {
+      res.status(400).json({ error: "userId, withName, scheduledAt, and place are required" });
+      return;
+    }
+
+    const parsedScheduledAt = new Date(scheduledAt);
+    if (Number.isNaN(parsedScheduledAt.getTime())) {
+      res.status(400).json({ error: "scheduledAt must be a valid date" });
+      return;
+    }
+
+    const newDate: UpcomingDate = {
+      id: randomUUID(),
+      sessionId,
+      withName,
+      scheduledAt: parsedScheduledAt,
+      place,
+      status: "scheduled",
+      createdAt: new Date(),
+    };
+
+    const updatedProfile = await UserProfileModel.findOneAndUpdate(
+      { userId },
+      {
+        $push: { upcomingDates: newDate },
+      },
+      { new: true },
+    ).lean();
+
+    if (!updatedProfile) {
+      res.status(404).json({ error: "Profile not found" });
+      return;
+    }
+
+    res.json({
+      saved: true,
+      upcomingDate: newDate,
+      upcomingDates: normalizeUpcomingDates((updatedProfile as { upcomingDates?: unknown }).upcomingDates),
+    });
+  } catch (error) {
+    console.error("[Profile] Upcoming date save error:", error);
+    res.status(500).json({ error: "Failed to save upcoming date" });
   }
 });
 

@@ -155,7 +155,7 @@ export class ScoringEngine {
       },
       hardConstraintPassed: this.hardConstraintPassed,
       trendOverTime: this.trendOverTime,
-      recommendMatch: finalScore >= 65 && this.hardConstraintPassed,
+      recommendMatch: finalScore > 65 && this.hardConstraintPassed,
       computedAt: new Date(),
     };
 
