@@ -1,4 +1,8 @@
 import { Namespace, Socket } from "socket.io";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { config } from "../config";
+import { ProfileBuilder } from "../services/profile-builder";
+import type { UserProfile } from "../models/user";
 
 /**
  * Socket.IO handler for the /onboarding namespace.
@@ -8,18 +12,24 @@ import { Namespace, Socket } from "socket.io";
  *     "message"       — User sends a chat message during onboarding
  *     "voice_audio"   — Raw audio chunk for STT processing
  *     "update_profile" — User adjusts profile sliders/fields
+ *     "complete"      — User signals onboarding is done
  *
  *   Server → Client:
  *     "response"      — Streaming LLM response chunks
  *     "response_end"  — LLM response complete
  *     "profile_update" — Updated profile vector preview
  *     "question"      — Next onboarding question (hard-coded core questions)
+ *     "onboarding_complete" — Profile built successfully
  *     "error"         — Error message
  */
 export function registerOnboardingHandlers(namespace: Namespace): void {
+  const genAI = new GoogleGenerativeAI(config.geminiApiKey);
+  const profileBuilder = new ProfileBuilder();
+
   namespace.on("connection", (socket: Socket) => {
     const sessionId = socket.handshake.query.sessionId as string;
-    console.log(`[Onboarding] Client connected: ${sessionId}`);
+    const userId = (socket.handshake.query.userId as string) || sessionId;
+    console.log(`[Onboarding] Client connected: ${sessionId}, user: ${userId}`);
 
     // ── Core onboarding questions (hard-coded) ──────────────────
     const coreQuestions = [
@@ -31,6 +41,8 @@ export function registerOnboardingHandlers(namespace: Namespace): void {
     ];
 
     let currentQuestionIndex = 0;
+    const answers: string[] = [];
+    const conversationHistory: Array<{ role: string; content: string }> = [];
 
     // Send the first question
     socket.emit("question", {
@@ -42,30 +54,61 @@ export function registerOnboardingHandlers(namespace: Namespace): void {
     // ── Handle user messages ────────────────────────────────────
     socket.on("message", async (data: { content: string }) => {
       try {
-        // TODO: Pass message to AgentEngine for dynamic follow-up
-        // TODO: Update profile builder with extracted info
-        // TODO: Stream LLM response back
+        answers.push(data.content);
+        conversationHistory.push({ role: "user", content: data.content });
 
-        // For now, echo and move to next question
-        socket.emit("response", {
-          content: `Received: "${data.content}". Processing...`,
-        });
-        socket.emit("response_end", {});
-
-        // Advance to next core question or switch to free-form
         currentQuestionIndex++;
+
         if (currentQuestionIndex < coreQuestions.length) {
+          // Still in core questions — acknowledge briefly and advance
+          const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+          const ackResult = await model.generateContent({
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  {
+                    text: `You are an onboarding assistant for a dating app. The user just answered: "${data.content}". Give a very brief, warm 1-sentence acknowledgment (max 20 words), then naturally transition to asking: "${coreQuestions[currentQuestionIndex]}"`,
+                  },
+                ],
+              },
+            ],
+          });
+          const ackText = ackResult.response.text();
+
+          socket.emit("response", { content: ackText });
+          socket.emit("response_end", {});
+          conversationHistory.push({ role: "assistant", content: ackText });
+
           socket.emit("question", {
             index: currentQuestionIndex,
             text: coreQuestions[currentQuestionIndex],
             total: coreQuestions.length,
           });
         } else {
-          socket.emit("response", {
-            content:
-              "Great! Now let's dive deeper. Tell me anything else about yourself — what makes you, you?",
+          // Core questions done — switch to free-form LLM conversation
+          const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+          const historyText = conversationHistory
+            .map((m) => `${m.role}: ${m.content}`)
+            .join("\n");
+
+          const result = await model.generateContent({
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  {
+                    text: `You are an onboarding assistant for a dating app. Here's the conversation so far:\n${historyText}\n\nNow have a natural follow-up conversation to learn more about the user. Ask ONE specific follow-up question based on their previous answers. Be warm, curious, and conversational. Keep your response to 2-3 sentences max.`,
+                  },
+                ],
+              },
+            ],
           });
+
+          const response = result.response.text();
+          socket.emit("response", { content: response });
           socket.emit("response_end", {});
+          conversationHistory.push({ role: "assistant", content: response });
         }
       } catch (error) {
         console.error("[Onboarding] Message handling error:", error);
@@ -76,13 +119,51 @@ export function registerOnboardingHandlers(namespace: Namespace): void {
     // ── Handle profile slider updates ───────────────────────────
     socket.on("update_profile", async (data: Record<string, unknown>) => {
       try {
-        // TODO: Update profile vector with slider changes
-        // TODO: Emit updated profile preview
         console.log(`[Onboarding] Profile update from ${sessionId}:`, data);
         socket.emit("profile_update", { ...data, updated: true });
       } catch (error) {
         console.error("[Onboarding] Profile update error:", error);
         socket.emit("error", { message: "Failed to update profile" });
+      }
+    });
+
+    // ── Handle onboarding completion ────────────────────────────
+    socket.on("complete", async () => {
+      try {
+        console.log(`[Onboarding] Building profile for user ${userId}`);
+
+        // Build UserProfile from collected answers
+        const profile: UserProfile = {
+          userId,
+          values: answers[0] ? answers[0].split(/[,;.]/).map((s) => s.trim()).filter(Boolean) : [],
+          boundaries: answers[1] ? answers[1].split(/[,;.]/).map((s) => s.trim()).filter(Boolean) : [],
+          lifestyle: answers[2] ? answers[2].split(/[,;.]/).map((s) => s.trim()).filter(Boolean) : [],
+          interests: answers[3] ? answers[3].split(/[,;.]/).map((s) => s.trim()).filter(Boolean) : [],
+          hobbies: answers[4] ? answers[4].split(/[,;.]/).map((s) => s.trim()).filter(Boolean) : [],
+          freeformPreferences: {},
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        // Store any extra free-form answers
+        for (let i = 5; i < answers.length; i++) {
+          profile.freeformPreferences[`followup_${i - 4}`] = answers[i];
+        }
+
+        // Build and persist profile vector
+        const profileVector = await profileBuilder.buildProfileVector(profile);
+
+        socket.emit("onboarding_complete", {
+          userId,
+          embeddingDimensions: profileVector.embedding.length,
+          personality: profileVector.personality,
+          message: "Profile built and saved successfully!",
+        });
+
+        console.log(`[Onboarding] Profile complete for user ${userId}, embedding dim: ${profileVector.embedding.length}`);
+      } catch (error) {
+        console.error("[Onboarding] Profile building error:", error);
+        socket.emit("error", { message: "Failed to build profile" });
       }
     });
 
@@ -99,3 +180,4 @@ export function registerOnboardingHandlers(namespace: Namespace): void {
     });
   });
 }
+

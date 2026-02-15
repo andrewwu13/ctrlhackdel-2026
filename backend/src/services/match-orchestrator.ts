@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { AgentEngine } from "./agent-engine";
 import { ScoringEngine } from "./scoring-engine";
+import { MessageEnrichmentService } from "./message-enrichment";
 import type { ConversationSession, Message } from "../models/conversation";
 import { ConversationState } from "../models/conversation";
 import type { ProfileVector } from "../models/user";
@@ -27,6 +28,7 @@ export class MatchOrchestrator {
   private agentA: AgentEngine;
   private agentB: AgentEngine;
   private scoringEngine: ScoringEngine;
+  private enrichmentService: MessageEnrichmentService;
   private session: ConversationSession;
   private timer: ReturnType<typeof setInterval> | null = null;
   private turnTimer: ReturnType<typeof setInterval> | null = null;
@@ -42,6 +44,7 @@ export class MatchOrchestrator {
     this.agentA = new AgentEngine();
     this.agentB = new AgentEngine();
     this.scoringEngine = new ScoringEngine();
+    this.enrichmentService = new MessageEnrichmentService();
     this.callbacks = callbacks;
 
     // Initialize agents with their respective profiles
@@ -161,6 +164,10 @@ export class MatchOrchestrator {
     // Add to both agents' memory
     this.agentA.addToHistory(message);
     this.agentB.addToHistory(message);
+
+    // Enrich message with sentiment and topic embedding via Gemini
+    await this.enrichmentService.enrich(message);
+
     this.session.messages.push(message);
 
     // Persist message to MongoDB
