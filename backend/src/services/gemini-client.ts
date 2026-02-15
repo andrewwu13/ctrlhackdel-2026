@@ -4,8 +4,8 @@ import { config } from "../config";
 
 // ── Model Constants ────────────────────────────────────────────────
 
-const GROQ_MODEL = "llama-3.3-70b-versatile";
-const GEMINI_MODEL = "gemini-2.5-flash-lite"; // fallback if no Groq key
+const GROQ_MODEL = "moonshotai/kimi-k2-instruct-0905";
+const GEMINI_MODEL = "gemini-2.5-flash-lite"; // only used if GROQ_API_KEY is missing
 const EMBEDDING_MODEL = "text-embedding-005";
 
 const MAX_RETRIES = 3;
@@ -24,7 +24,7 @@ const geminiClient = config.geminiApiKey
 // ── Rate Limiter (per-provider) ────────────────────────────────────
 
 const rateLimitState = {
-  groq: { timestamps: [] as number[], maxRpm: 25 },   // Groq free = 30 RPM
+  groq: { timestamps: [] as number[], maxRpm: 50 },   // Kimi K2 = 60 RPM on Groq free tier
   gemini: { timestamps: [] as number[], maxRpm: 12 },  // Gemini free = 15 RPM
 };
 
@@ -242,35 +242,27 @@ export async function generateWithRetry(
 
   // If Groq is available, use it (14,400 RPD vs Gemini's 20 RPD)
   if (groqClient) {
-    try {
-      // Build a combined prompt that includes conversation context for Groq
-      let fullPrompt = userText;
-      if (modelParts.length > 0) {
-        // Reconstruct conversation history for Groq
-        const history = request.contents
-          .map((c) => {
-            const text = c.parts.map((p) => ("text" in p ? p.text : "")).join("");
-            return `${c.role === "model" ? "assistant" : "user"}: ${text}`;
-          })
-          .join("\n");
-        fullPrompt = history;
-      }
-
-      return await generateViaGroq(fullPrompt, systemPrompt, {
-        temperature: options.temperature,
-        jsonMode: options.jsonMode,
-        caller,
-      });
-    } catch (groqError) {
-      console.warn(
-        `[LLM] ${caller} | Groq failed, falling back to Gemini:`,
-        groqError instanceof Error ? groqError.message : groqError
-      );
-      // Fall through to Gemini
+    // Build a combined prompt that includes conversation context for Groq
+    let fullPrompt = userText;
+    if (modelParts.length > 0) {
+      // Reconstruct conversation history for Groq
+      const history = request.contents
+        .map((c) => {
+          const text = c.parts.map((p) => ("text" in p ? p.text : "")).join("");
+          return `${c.role === "model" ? "assistant" : "user"}: ${text}`;
+        })
+        .join("\n");
+      fullPrompt = history;
     }
+
+    return await generateViaGroq(fullPrompt, systemPrompt, {
+      temperature: options.temperature,
+      jsonMode: options.jsonMode,
+      caller,
+    });
   }
 
-  // Fallback: use Gemini directly
+  // Only use Gemini if no Groq key is configured
   return generateViaGemini(request, {
     temperature: options.temperature,
     jsonMode: options.jsonMode,
