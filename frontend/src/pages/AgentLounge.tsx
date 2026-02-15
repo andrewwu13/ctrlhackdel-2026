@@ -265,6 +265,8 @@ const TrendGraph = ({
   );
 };
 
+const STORAGE_KEY = "soulbound_lounge_state";
+
 const AgentLounge = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -277,20 +279,72 @@ const AgentLounge = () => {
     searchParams?.get("userId") ||
     (typeof window !== "undefined" ? localStorage.getItem("soulbound_userId") : null);
 
-  const [conversations, setConversations] = useState<LoungeConversation[]>([]);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  // Restore persisted state from sessionStorage
+  const restoredState = useMemo(() => {
+    if (typeof window === "undefined" || !userId) return null;
+    try {
+      const raw = sessionStorage.getItem(`${STORAGE_KEY}_${userId}`);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      // Mark any in-flight conversations as ended (sockets are gone)
+      const convs = (parsed.conversations || []).map((c: LoungeConversation) => ({
+        ...c,
+        state: (c.state === "LIVE" || c.state === "WRAP") ? "SCORE" as ConversationState : c.state,
+        connecting: false,
+      }));
+      return {
+        conversations: convs as LoungeConversation[],
+        activeConversationId: parsed.activeConversationId as string | null,
+        matchedUserIds: new Set<string>(parsed.matchedUserIds || []),
+        counter: parsed.counter || 1,
+      };
+    } catch {
+      return null;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const [conversations, setConversations] = useState<LoungeConversation[]>(
+    restoredState?.conversations ?? []
+  );
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(
+    restoredState?.activeConversationId ?? null
+  );
   const [globalError, setGlobalError] = useState("");
   const [isCreatingConversation, setIsCreatingConversation] = useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [userSnapshot, setUserSnapshot] = useState<UserSnapshot | null>(null);
   const [candidateQueue, setCandidateQueue] = useState<MatchCandidate[]>([]);
-  const [matchedUserIds, setMatchedUserIds] = useState<Set<string>>(new Set());
+  const [matchedUserIds, setMatchedUserIds] = useState<Set<string>>(
+    restoredState?.matchedUserIds ?? new Set()
+  );
+
+  // Restore counter ref
+  if (restoredState?.counter) {
+    conversationCounterRef.current = restoredState.counter;
+  }
 
   const backendUrl = useMemo(() => getBackendUrl(), []);
 
   useEffect(() => {
     activeConversationIdRef.current = activeConversationId;
   }, [activeConversationId]);
+
+  // Persist state to sessionStorage whenever it changes
+  useEffect(() => {
+    if (!userId) return;
+    try {
+      const payload = {
+        conversations,
+        activeConversationId,
+        matchedUserIds: Array.from(matchedUserIds),
+        counter: conversationCounterRef.current,
+      };
+      sessionStorage.setItem(`${STORAGE_KEY}_${userId}`, JSON.stringify(payload));
+    } catch {
+      // sessionStorage quota exceeded — ignore silently
+    }
+  }, [conversations, activeConversationId, matchedUserIds, userId]);
 
   const activeConversation = useMemo(
     () =>
