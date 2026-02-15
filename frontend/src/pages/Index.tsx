@@ -59,7 +59,7 @@ const Index = () => {
           transition={{ delay: 0.6, duration: 0.8 }}
         >
           <h1 className="font-display text-6xl md:text-8xl font-black tracking-tight">
-            <span className="text-gradient-rose">AL-</span>
+            <span className="text-gradient-rose">AI-</span>
             <span className="text-foreground">MER</span>
           </h1>
           <motion.p
