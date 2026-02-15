@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { ProfileBuilder } from "../services/profile-builder";
-import { CompatibilityResultModel } from "../db/mongo";
+import { CompatibilityResultModel, ProfileVectorModel } from "../db/mongo";
 
 const router = Router();
 
@@ -47,6 +47,19 @@ router.post("/start", async (req: Request, res: Response) => {
         createdAt: now,
         updatedAt: now,
       };
+
+      // Persist the demo agent to MongoDB so the socket handler can find it
+      await ProfileVectorModel.findOneAndUpdate(
+        { userId: userBId },
+        {
+          embedding: profileB.embedding,
+          personality: profileB.personality,
+          hardFilters: profileB.hardFilters,
+          softFilters: profileB.softFilters,
+        },
+        { upsert: true, new: true }
+      );
+      console.log(`[Match] Persisted demo agent ${userBId} to MongoDB`);
     }
 
     const sessionId = uuidv4();

@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 
-type AgentMode = "booting" | "speaking" | "listening" | "thinking" | "generating";
+type AgentMode = "booting" | "speaking" | "listening" | "thinking" | "generating" | "idle";
 
 type AgentAvatarProps = {
   mode: AgentMode;
