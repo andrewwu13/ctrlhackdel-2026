@@ -158,9 +158,8 @@ export function registerConversationHandlers(namespace: Namespace): void {
           },
         };
 
-        orchestrator = new MatchOrchestrator(
-          sessionId,
         const orchestrator = new MatchOrchestrator(
+          sessionId,
           profileA,
           summaryA,
           profileB,
