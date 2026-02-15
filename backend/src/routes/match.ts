@@ -6,6 +6,72 @@ import { CompatibilityResultModel, ProfileVectorModel } from "../db/mongo";
 const router = Router();
 
 /**
+ * GET /api/match/candidates?userId=xxx
+ * Returns all other users ranked by pre-conversation compatibility score (descending).
+ * Score = 0.6 * embedding_cosine_similarity + 0.4 * personality_cosine_similarity
+ */
+router.get("/candidates", async (req: Request, res: Response) => {
+  try {
+    const userId = req.query.userId as string;
+    if (!userId) {
+      res.status(400).json({ error: "userId query param is required" });
+      return;
+    }
+
+    const myProfile = await ProfileVectorModel.findOne({ userId }).lean();
+    if (!myProfile) {
+      res.status(404).json({ error: "Complete onboarding first" });
+      return;
+    }
+
+    // Fetch all other profile vectors
+    const others = await ProfileVectorModel.find({ userId: { $ne: userId } }).lean();
+
+    const cosineSim = (a: number[], b: number[]): number => {
+      if (!a || !b || a.length === 0 || b.length === 0 || a.length !== b.length) return 0;
+      let dot = 0, normA = 0, normB = 0;
+      for (let i = 0; i < a.length; i++) {
+        dot += a[i] * b[i];
+        normA += a[i] * a[i];
+        normB += b[i] * b[i];
+      }
+      const denom = Math.sqrt(normA) * Math.sqrt(normB);
+      return denom === 0 ? 0 : dot / denom;
+    };
+
+    const myPersonality = Object.values(myProfile.personality || {}).filter((v): v is number => v != null);
+    const myEmbedding = (myProfile.embedding || []) as number[];
+
+    const candidates = others.map((other) => {
+      const otherPersonality = Object.values(other.personality || {}).filter((v): v is number => v != null);
+      const otherEmbedding = (other.embedding || []) as number[];
+
+      const embeddingScore = cosineSim(myEmbedding, otherEmbedding);
+      const personalityScore = cosineSim(myPersonality, otherPersonality);
+      const preScore = Math.round((0.6 * embeddingScore + 0.4 * personalityScore) * 100);
+
+      return {
+        userId: other.userId,
+        preScore: Math.max(0, Math.min(100, preScore)),
+        personality: other.personality,
+      };
+    });
+
+    // Sort descending by preScore
+    candidates.sort((a, b) => b.preScore - a.preScore);
+
+    console.log(
+      `[Match] Candidates for ${userId.slice(0, 8)}: ${candidates.length} users, top=${candidates[0]?.preScore ?? 0}%`
+    );
+
+    res.json({ candidates });
+  } catch (error) {
+    console.error("Candidates error:", error);
+    res.status(500).json({ error: "Failed to compute candidates" });
+  }
+});
+
+/**
  * POST /api/match/start
  * Initiates an agent-to-agent conversation session between two users.
  * Fetches both users' ProfileVectors from MongoDB.

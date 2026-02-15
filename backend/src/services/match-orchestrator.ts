@@ -12,7 +12,7 @@ import { ConversationModel } from "../db/mongo";
 
 const TOTAL_DURATION_SECONDS = 60;
 const WRAP_START_SECONDS = 50;
-const TURN_INTERVAL_MS = 8000; // ~8s per agent turn
+const TURN_INTERVAL_MS = 3000; // ~8s per agent turn
 
 // ── Match Orchestrator ─────────────────────────────────────────────
 
@@ -109,8 +109,8 @@ export class MatchOrchestrator {
       }
     }, 1000);
 
-    // Start alternating agent turns
-    let isAgentATurn = true;
+    // Start alternating agent turns (agent_a already opened, so B goes next)
+    let isAgentATurn = false;
     let turnNumber = 0;
     const openingMessage = "Hey, nice to meet you.";
 

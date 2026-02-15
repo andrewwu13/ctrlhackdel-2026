@@ -99,18 +99,28 @@ export function registerConversationHandlers(namespace: Namespace): void {
 
         if (!profileB) {
           console.log(
-            `[Conversation] No ProfileVector for ${uBId}, generating demo agent`
+            `[Conversation] No ProfileVector for ${uBId}, using SoulBound User profile as demo agent`
           );
           const now = new Date();
+          // Based on real user profile: SoulBound User (69916a84)
+          // Very creative, emotionally sensitive — creates natural conversation friction
+
+          // Deterministic embedding for consistent pre-conversation scoring
+          const seed = [...uBId].reduce((acc, c) => acc * 31 + c.charCodeAt(0), 7) | 0;
+          const demoEmbedding = new Array(768).fill(0).map((_, i) => {
+            const x = Math.sin(seed * (i + 1)) * 10000;
+            return x - Math.floor(x);
+          });
+
           profileB = {
             userId: uBId,
-            embedding: new Array(768).fill(0).map(() => Math.random() * 2 - 1),
+            embedding: demoEmbedding,
             personality: {
-              openness: 0.7,
-              conscientiousness: 0.6,
-              extraversion: 0.65,
-              agreeableness: 0.75,
-              neuroticism: 0.3,
+              openness: 0.92,
+              conscientiousness: 0.50,
+              extraversion: 0.50,
+              agreeableness: 0.61,
+              neuroticism: 0.73,
             },
             hardFilters: {},
             softFilters: {},

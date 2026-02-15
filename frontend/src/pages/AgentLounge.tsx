@@ -53,6 +53,11 @@ type UpcomingDate = {
   createdAt: string;
 };
 
+type MatchCandidate = {
+  userId: string;
+  preScore: number;
+};
+
 type UserSnapshot = {
   userId: string;
   account: {
@@ -278,6 +283,8 @@ const AgentLounge = () => {
   const [isCreatingConversation, setIsCreatingConversation] = useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [userSnapshot, setUserSnapshot] = useState<UserSnapshot | null>(null);
+  const [candidateQueue, setCandidateQueue] = useState<MatchCandidate[]>([]);
+  const [matchedUserIds, setMatchedUserIds] = useState<Set<string>>(new Set());
 
   const backendUrl = useMemo(() => getBackendUrl(), []);
 
@@ -334,11 +341,35 @@ const AgentLounge = () => {
     }
   }, [userId]);
 
+  // Load ranked candidates on mount
+  const loadCandidates = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const response = await fetchBackend(`/api/match/candidates?userId=${encodeURIComponent(userId)}`);
+      if (response.ok) {
+        const data = await response.json();
+        setCandidateQueue(data.candidates || []);
+      }
+    } catch (err) {
+      console.error("Failed to load candidates:", err);
+    }
+  }, [userId]);
+
   const createConversation = useCallback(async () => {
     if (!userId) {
       setGlobalError("No user profile found. Please complete onboarding first.");
       return;
     }
+
+    // Pick the next best unmatched candidate
+    const nextCandidate = candidateQueue.find((c) => !matchedUserIds.has(c.userId));
+    if (!nextCandidate) {
+      setGlobalError("No more candidates available. You've matched with everyone!");
+      return;
+    }
+
+    const matchUserId = nextCandidate.userId;
+    setMatchedUserIds((prev) => new Set(prev).add(matchUserId));
 
     setIsCreatingConversation(true);
     setGlobalError("");
@@ -347,7 +378,7 @@ const AgentLounge = () => {
       const response = await fetchBackend("/api/match/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userAId: userId, userBId: "demo-agent" }),
+        body: JSON.stringify({ userAId: userId, userBId: matchUserId }),
       });
 
       if (!response.ok) {
@@ -359,26 +390,29 @@ const AgentLounge = () => {
 
       const payload = await response.json();
       const sessionId = payload.sessionId as string;
-      const label = `Conversation ${conversationCounterRef.current}`;
+      const peerName = matchUserId === "demo-agent"
+        ? (userSnapshot?.suggestedMatchPersona?.name ?? "Ava")
+        : `Match ${conversationCounterRef.current}`;
+      const label = `Match #${conversationCounterRef.current} (${nextCandidate.preScore}%)`;
       conversationCounterRef.current += 1;
 
       const persona = userSnapshot?.suggestedMatchPersona ?? {
-        id: "demo-agent",
-        name: "Ava",
+        id: matchUserId,
+        name: peerName,
         gender: "female" as const,
-        avatarSeed: 5,
+        avatarSeed: hashSeed(matchUserId),
       };
 
       const baseConversation: LoungeConversation = {
         sessionId,
         label,
-        peerLabel: persona.name,
-        peerAvatarSeed: persona.avatarSeed,
+        peerLabel: matchUserId === "demo-agent" ? persona.name : peerName,
+        peerAvatarSeed: matchUserId === "demo-agent" ? persona.avatarSeed : hashSeed(matchUserId),
         state: "INIT",
         messages: [],
-        score: 0,
-        scoreSeries: [],
-        breakdown: {},
+        score: nextCandidate.preScore,
+        scoreSeries: [nextCandidate.preScore],
+        breakdown: { preConversation: nextCandidate.preScore },
         elapsed: 0,
         connecting: true,
         myAgentActive: false,
@@ -395,7 +429,7 @@ const AgentLounge = () => {
       setActiveConversationId(sessionId);
 
       const socket = io(`${backendUrl}/conversation`, {
-        query: { sessionId, userAId: userId, userBId: "demo-agent" },
+        query: { sessionId, userAId: userId, userBId: matchUserId },
       });
 
       socketsRef.current[sessionId] = socket;
@@ -517,25 +551,17 @@ const AgentLounge = () => {
     } finally {
       setIsCreatingConversation(false);
     }
-  }, [backendUrl, updateConversation, userId, userSnapshot]);
+  }, [backendUrl, candidateQueue, matchedUserIds, updateConversation, userId, userSnapshot]);
 
   useEffect(() => {
     void loadUserSnapshot();
   }, [loadUserSnapshot]);
 
+  // Load candidates after profile is ready
   useEffect(() => {
     if (!userId || isLoadingProfile) return;
-
-    if (conversations.length === 0 && !isCreatingConversation) {
-      void createConversation();
-    }
-  }, [
-    conversations.length,
-    createConversation,
-    isCreatingConversation,
-    isLoadingProfile,
-    userId,
-  ]);
+    void loadCandidates();
+  }, [userId, isLoadingProfile, loadCandidates]);
 
   useEffect(() => {
     return () => {
@@ -686,10 +712,12 @@ const AgentLounge = () => {
               <button
                 type="button"
                 onClick={() => void createConversation()}
-                disabled={isCreatingConversation || !userId || isLoadingProfile}
+                disabled={isCreatingConversation || !userId || isLoadingProfile || candidateQueue.filter((c) => !matchedUserIds.has(c.userId)).length === 0}
                 className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isCreatingConversation ? "Starting..." : "New Conversation"}
+                {isCreatingConversation
+                  ? "Matching..."
+                  : `New Match (${candidateQueue.filter((c) => !matchedUserIds.has(c.userId)).length} left)`}
               </button>
               <button
                 type="button"
@@ -716,6 +744,16 @@ const AgentLounge = () => {
               </p>
 
               <div className="flex max-h-[65vh] flex-col gap-2 overflow-y-auto pr-1">
+                {conversations.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <p className="text-sm text-muted-foreground">
+                      No conversations yet.
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground/70">
+                      Click &quot;New Match&quot; to start your first conversation.
+                    </p>
+                  </div>
+                )}
                 {conversations.map((conversation) => {
                   const selected = conversation.sessionId === activeConversationId;
                   const lastMessage =
