@@ -91,6 +91,7 @@ const AgentLounge = () => {
       const sessionId = data.sessionId as string;
       const backendUrl = getBackendUrl();
 
+
       // Connect to Socket.IO conversation namespace
       const socket = io(`${backendUrl}/conversation`, {
         query: { sessionId, userAId: userId, userBId: "demo-agent" },
