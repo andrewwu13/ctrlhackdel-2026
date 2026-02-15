@@ -8,6 +8,7 @@ import { connectMongo } from "./db/mongo";
 // Routes
 import healthRouter from "./routes/health";
 import onboardingRouter from "./routes/onboarding";
+import converseRouter from "./routes/converse";
 import matchRouter from "./routes/match";
 import profileRouter from "./routes/profile";
 import ttsRouter from "./routes/tts";
@@ -39,6 +40,7 @@ app.use(express.json());
 
 app.use("/api/health", healthRouter);
 app.use("/api/onboarding", onboardingRouter);
+app.use("/api/onboarding", converseRouter);
 app.use("/api/match", matchRouter);
 app.use("/api/profile", profileRouter);
 app.use("/api/tts", ttsRouter);
