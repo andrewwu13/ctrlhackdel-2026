@@ -208,18 +208,21 @@ export function useConversationFlow(
         const audio = new Audio(url);
         audioRef.current = audio;
 
-        await new Promise<void>((resolve, reject) => {
-          audio.onended = () => resolve();
-          audio.onerror = () => reject(new Error("Audio playback failed"));
-          audio
-            .play()
-            .then(() => undefined)
-            .catch((e) => reject(e));
-        });
+        try {
+          await new Promise<void>((resolve, reject) => {
+            audio.onended = () => resolve();
+            audio.onerror = () => reject(new Error("Audio playback failed"));
+            audio
+              .play()
+              .then(() => undefined)
+              .catch((e) => reject(e));
+          });
 
-        URL.revokeObjectURL(url);
-        audioRef.current = null;
-        log("Audio playback finished");
+          log("Audio playback finished");
+        } finally {
+          URL.revokeObjectURL(url);
+          audioRef.current = null;
+        }
       } catch (error) {
         const msg =
           error instanceof Error ? error.message : "Audio playback error";
