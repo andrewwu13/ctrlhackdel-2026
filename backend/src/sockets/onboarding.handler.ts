@@ -52,8 +52,14 @@ export function registerOnboardingHandlers(namespace: Namespace): void {
     // ── Handle user messages ────────────────────────────────────
     socket.on("message", async (data: { content: string }) => {
       try {
-        answers.push(data.content);
-        conversationHistory.push({ role: "user", content: data.content });
+        const content = data?.content?.trim();
+        if (!content) {
+          socket.emit("error", { message: "Message cannot be empty." });
+          return;
+        }
+
+        answers.push(content);
+        conversationHistory.push({ role: "user", content });
 
         currentQuestionIndex++;
 
@@ -67,7 +73,7 @@ export function registerOnboardingHandlers(namespace: Namespace): void {
                     role: "user",
                     parts: [
                       {
-                        text: `You are an onboarding assistant for a dating app. You highly value user experience, and you are eager to learn more about the user's preferences. You are lighthearted and fun, but you also take your job seriously. The user just answered: "${data.content}". Give a warm, brief acknowledgment, then naturally transition to asking: "${coreQuestions[currentQuestionIndex]}"`,
+                        text: `You are an onboarding assistant for a dating app. You highly value user experience, and you are eager to learn more about the user's preferences. You are lighthearted and fun, but you also take your job seriously. The user just answered: "${content}". Give a warm, brief acknowledgment, then naturally transition to asking: "${coreQuestions[currentQuestionIndex]}"`,
                       },
                     ],
                   },
